@@ -1,0 +1,33 @@
+[project]
+name = "nanola"
+version = "0.1.0"
+description = "Local-first meeting recorder, transcriber, and report generator."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "httpx>=0.27.0",
+    "nvidia-cublas-cu12>=12.0.0",
+    "nvidia-cudnn-cu12>=9.0.0",
+    "pydantic>=2.7.0",
+    "soundcard>=0.4.3",
+    "typer>=0.12.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+]
+local-transcription = [
+]
+
+[project.scripts]
+nanola = "nanola.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
