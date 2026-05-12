@@ -1,5 +1,5 @@
-from nanola.config import AppConfig
-from nanola.doctor import collect_doctor_checks
+from manola.config import AppConfig
+from manola.doctor import collect_doctor_checks
 
 
 def test_doctor_reports_missing_default_capabilities() -> None:
@@ -8,7 +8,7 @@ def test_doctor_reports_missing_default_capabilities() -> None:
 
     assert by_name["shared_dir"].status == "warn"
     assert by_name["faster-whisper"].status in {"ok", "missing"}
-    assert by_name["secret:OPENROUTER_API_KEY"].status in {"ok", "missing"}
+    assert by_name["secret:OPENCODE_API_KEY"].status in {"ok", "missing"}
 
 
 def test_doctor_marks_remote_transcription_requirements_missing() -> None:

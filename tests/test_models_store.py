@@ -1,9 +1,9 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from nanola import config as config_module
-from nanola.config import AppConfig, render_config
-from nanola.models_store import download_faster_whisper_model, list_downloaded_models
+from manola import config as config_module
+from manola.config import AppConfig, render_config
+from manola.models_store import download_faster_whisper_model, list_downloaded_models
 
 
 def test_download_model_uses_known_alias_and_sets_default(monkeypatch, tmp_path: Path) -> None:

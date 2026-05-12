@@ -1,5 +1,5 @@
 [project]
-name = "nanola"
+name = "manola"
 version = "0.1.0"
 description = "Local-first meeting recorder, transcriber, and report generator."
 readme = "README.md"
@@ -22,7 +22,7 @@ local-transcription = [
 ]
 
 [project.scripts]
-nanola = "nanola.cli:app"
+manola = "manola.cli:app"
 
 [build-system]
 requires = ["hatchling"]

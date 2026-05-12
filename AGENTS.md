@@ -2,7 +2,7 @@
 
 ## Project
 
-Nanola is a local-first meeting recorder, transcriber, and report generator.
+Manola is a local-first meeting recorder, transcriber, and report generator.
 
 Stack:
 
@@ -29,16 +29,16 @@ uv run --extra dev python -m pytest --basetemp .tmp-pytest\run
 Run the CLI through `uv`:
 
 ```powershell
-uv run nanola doctor
-uv run nanola --help
+uv run manola doctor
+uv run manola --help
 ```
 
-Do not assume `nanola` is installed globally.
+Do not assume `manola` is installed globally.
 
 ## Repo Structure
 
 ```text
-src/nanola/
+src/manola/
   cli.py              Typer commands
   pipeline.py         import/process/transcribe/summarize orchestration
   audio.py            FFmpeg normalization and audio import
@@ -47,7 +47,7 @@ src/nanola/
   transcribe_worker.py CUDA worker process
   reporting.py        LLM report generation and fallback reports
   exporting.py        shared-folder export policies
-  config.py           ~/.nanola config/secrets
+  config.py           ~/.manola config/secrets
   naming.py           meeting folder naming
   models_store.py     local faster-whisper model downloads
   doctor.py           dependency/config diagnostics
@@ -105,10 +105,10 @@ The worker exists because CTranslate2 can abort on CUDA cleanup on Windows. The 
 Validated commands:
 
 ```powershell
-uv run nanola audio doctor
-uv run nanola audio test --source mic --duration 10
-uv run nanola audio test --source system --duration 10
-uv run nanola audio test --source meeting --duration 10
+uv run manola audio doctor
+uv run manola audio test --source mic --duration 10
+uv run manola audio test --source system --duration 10
+uv run manola audio test --source meeting --duration 10
 ```
 
 System loopback and meeting capture have been verified with non-zero RMS.

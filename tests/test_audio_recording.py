@@ -4,8 +4,8 @@ import warnings
 import numpy as np
 import pytest
 
-from nanola.audio_recording import record_wav, rms_float, write_wav, _device_by_index, _match_device, _mix_audio, _record_frames
-from nanola.errors import NanolaError
+from manola.audio_recording import record_wav, rms_float, write_wav, _device_by_index, _match_device, _mix_audio, _record_frames
+from manola.errors import ManolaError
 
 
 def test_write_wav_creates_mono_file(tmp_path: Path) -> None:
@@ -37,7 +37,7 @@ def test_mix_audio_averages_tracks() -> None:
 
 def test_record_wav_writes_target(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
-        "nanola.audio_recording._record_source_with_components",
+        "manola.audio_recording._record_source_with_components",
         lambda source, duration_seconds, sample_rate, **kwargs: (
             np.ones(sample_rate, dtype=np.float32) * 0.1,
             {"mic": 0.1},
@@ -53,7 +53,7 @@ def test_record_wav_writes_target(monkeypatch, tmp_path: Path) -> None:
 
 def test_record_wav_rejects_partial_meeting_capture(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
-        "nanola.audio_recording._record_source_with_components",
+        "manola.audio_recording._record_source_with_components",
         lambda source, duration_seconds, sample_rate, **kwargs: (
             np.ones(sample_rate, dtype=np.float32) * 0.1,
             {"mic": 0.1, "system": 0.0},
@@ -61,7 +61,7 @@ def test_record_wav_rejects_partial_meeting_capture(monkeypatch, tmp_path: Path)
     )
 
     target = tmp_path / "recorded.wav"
-    with pytest.raises(NanolaError, match="Meeting capture appears partial"):
+    with pytest.raises(ManolaError, match="Meeting capture appears partial"):
         record_wav(source="meeting", duration_seconds=1, target=target, sample_rate=16000)
 
     assert target.exists()
@@ -69,7 +69,7 @@ def test_record_wav_rejects_partial_meeting_capture(monkeypatch, tmp_path: Path)
 
 def test_record_wav_allows_partial_meeting_capture_when_requested(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
-        "nanola.audio_recording._record_source_with_components",
+        "manola.audio_recording._record_source_with_components",
         lambda source, duration_seconds, sample_rate, **kwargs: (
             np.ones(sample_rate, dtype=np.float32) * 0.1,
             {"mic": 0.1, "system": 0.0},
@@ -128,5 +128,5 @@ def test_device_by_index_is_one_based() -> None:
 
 
 def test_device_by_index_rejects_zero() -> None:
-    with pytest.raises(NanolaError, match="1 or greater"):
+    with pytest.raises(ManolaError, match="1 or greater"):
         _device_by_index([], 0, "microphone")

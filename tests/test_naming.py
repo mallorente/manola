@@ -1,8 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 
-from nanola.models import MeetingType
-from nanola.naming import meeting_folder_name, proposed_archive_parent, slugify
+from manola.models import MeetingType
+from manola.naming import TYPE_FOLDER_NAMES, meeting_folder_name, proposed_archive_parent, slugify
 
 
 def test_slugify_keeps_stable_ascii_folder_names() -> None:
@@ -34,9 +34,15 @@ def test_meeting_folder_name_omits_duplicate_subject_topic() -> None:
 
 
 def test_proposed_archive_parent_uses_project_when_present() -> None:
-    parent = proposed_archive_parent(Path("Meetings"), "nanola", MeetingType.job_interview)
+    parent = proposed_archive_parent(Path("Meetings"), "manola", MeetingType.job_interview)
 
-    assert parent == Path("Meetings") / "Projects" / "nanola"
+    assert parent == Path("Meetings") / "Projects" / "manola"
+
+
+def test_every_meeting_type_has_folder_labels() -> None:
+    missing = [meeting_type.value for meeting_type in MeetingType if meeting_type not in TYPE_FOLDER_NAMES]
+
+    assert missing == []
 
 
 def test_proposed_archive_parent_without_project_is_workspace_root() -> None:

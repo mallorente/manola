@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from nanola.config import AppConfig
-from nanola.exporting import export_meeting
-from nanola.models import SharePolicy
+from manola.config import AppConfig
+from manola.exporting import export_meeting
+from manola.models import SharePolicy
 
 
 def test_export_meeting_copies_report_and_transcript(tmp_path: Path) -> None:

@@ -3,11 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanola.config import AppConfig
-from nanola.errors import NanolaError
-from nanola.models import Language, TranscriptionBackend
-from nanola.transcription import transcribe_audio
-from nanola.transcription import _transcribe_local_in_worker
+from manola.config import AppConfig
+from manola.errors import ManolaError
+from manola.models import Language, TranscriptionBackend
+from manola.transcription import transcribe_audio
+from manola.transcription import _transcribe_local_in_worker
 
 
 def test_local_transcription_uses_configured_cpu_defaults(monkeypatch, tmp_path: Path) -> None:
@@ -39,7 +39,7 @@ def test_local_transcription_uses_configured_cpu_defaults(monkeypatch, tmp_path:
 
 def test_local_transcription_falls_back_to_cpu_after_cuda_error(monkeypatch, tmp_path: Path) -> None:
     calls = []
-    monkeypatch.setenv("NANOLA_TRANSCRIBE_WORKER", "1")
+    monkeypatch.setenv("MANOLA_TRANSCRIBE_WORKER", "1")
 
     class FakeWhisperModel:
         def __init__(self, model_name: str, *, device: str, compute_type: str) -> None:
@@ -75,7 +75,7 @@ def test_local_transcription_falls_back_to_cpu_after_cuda_error(monkeypatch, tmp
 def test_local_transcription_cuda_error_does_not_fallback_unless_enabled(
     monkeypatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("NANOLA_TRANSCRIBE_WORKER", "1")
+    monkeypatch.setenv("MANOLA_TRANSCRIBE_WORKER", "1")
     class FakeWhisperModel:
         def __init__(self, model_name: str, *, device: str, compute_type: str) -> None:
             pass
@@ -89,7 +89,7 @@ def test_local_transcription_cuda_error_does_not_fallback_unless_enabled(
         SimpleNamespace(WhisperModel=FakeWhisperModel),
     )
 
-    with pytest.raises(NanolaError, match="CUDA transcription requires"):
+    with pytest.raises(ManolaError, match="CUDA transcription requires"):
         transcribe_audio(
             tmp_path / "audio.wav",
             backend=TranscriptionBackend.local,
@@ -112,7 +112,7 @@ def test_local_transcription_wraps_cpu_runtime_errors(monkeypatch, tmp_path: Pat
         SimpleNamespace(WhisperModel=FakeWhisperModel),
     )
 
-    with pytest.raises(NanolaError, match="Local transcription failed"):
+    with pytest.raises(ManolaError, match="Local transcription failed"):
         transcribe_audio(
             tmp_path / "audio.wav",
             backend=TranscriptionBackend.local,
@@ -140,8 +140,8 @@ def test_local_transcription_chunks_long_wav(monkeypatch, tmp_path: Path) -> Non
         "faster_whisper",
         SimpleNamespace(WhisperModel=FakeWhisperModel),
     )
-    monkeypatch.setattr("nanola.transcription._wav_duration", lambda audio_path: 601.0)
-    monkeypatch.setattr("nanola.transcription._extract_audio_chunk", fake_extract)
+    monkeypatch.setattr("manola.transcription._wav_duration", lambda audio_path: 601.0)
+    monkeypatch.setattr("manola.transcription._extract_audio_chunk", fake_extract)
 
     result = transcribe_audio(
         tmp_path / "long.wav",
@@ -172,7 +172,7 @@ def test_cuda_worker_wrapper_forwards_worker_status(monkeypatch, tmp_path: Path)
         return Completed()
 
     statuses = []
-    monkeypatch.setattr("nanola.transcription.subprocess.run", fake_run)
+    monkeypatch.setattr("manola.transcription.subprocess.run", fake_run)
 
     result = _transcribe_local_in_worker(
         tmp_path / "audio.wav",

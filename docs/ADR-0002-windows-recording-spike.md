@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Nanola should feel like a meeting recorder, not an audio engineering tool. For real remote meetings, the useful default is to record both the user's microphone and the system audio from the call.
+Manola should feel like a meeting recorder, not an audio engineering tool. For real remote meetings, the useful default is to record both the user's microphone and the system audio from the call.
 
 However, reliable system-audio capture differs substantially between operating systems:
 
@@ -21,8 +21,8 @@ The MVP is Windows-first. macOS recording is Phase 2.
 The primary UX will be:
 
 ```text
-nanola meet
-nanola record
+manola meet
+manola record
 ```
 
 This means "record a meeting" and attempts to capture:
@@ -34,19 +34,19 @@ This means "record a meeting" and attempts to capture:
 Advanced source-specific modes may exist for diagnostics and fallback:
 
 ```text
-nanola record --source mic
-nanola record --source system
-nanola record --source meeting
-nanola record --mic "<name>" --speaker "<name>"
-nanola devices
-nanola audio devices
+manola record --source mic
+manola record --source system
+manola record --source meeting
+manola record --mic "<name>" --speaker "<name>"
+manola devices
+manola audio devices
 ```
 
 `record meeting` must not silently continue if either microphone or system audio is unavailable. It must ask for explicit confirmation or fail.
 
 The MVP must support importing recordings regardless of whether recording is stable.
 
-Recording made by Nanola will be stored as WAV in MVP.
+Recording made by Manola will be stored as WAV in MVP.
 
 ## Audio Spike
 
@@ -55,10 +55,10 @@ Before marking recording as stable, run a Windows technical spike.
 Required commands:
 
 ```text
-nanola audio doctor
-nanola audio test --source mic
-nanola audio test --source system
-nanola audio test --source meeting --duration 30
+manola audio doctor
+manola audio test --source mic
+manola audio test --source system
+manola audio test --source meeting --duration 30
 ```
 
 The spike must:
@@ -89,14 +89,14 @@ Initial implementation uses `soundcard`.
 Implemented commands:
 
 ```text
-nanola audio doctor
-nanola devices
-nanola audio devices
-nanola audio test --source mic --duration 3
-nanola audio test --source system --duration 3
-nanola audio test --source meeting --duration 3
-nanola record --duration 30 --source meeting
-nanola record --duration 30 --source meeting --process
+manola audio doctor
+manola devices
+manola audio devices
+manola audio test --source mic --duration 3
+manola audio test --source system --duration 3
+manola audio test --source meeting --duration 3
+manola record --duration 30 --source meeting
+manola record --duration 30 --source meeting --process
 ```
 
 Current behavior:
@@ -105,15 +105,15 @@ Current behavior:
 - Enumerates output devices.
 - Enumerates loopback devices.
 - Records WAV samples for microphone, system loopback, and mixed meeting audio.
-- Records meeting WAV files through the primary `nanola record` command.
+- Records meeting WAV files through the primary `manola record` command.
 - Stores recordings directly inside the meeting archive as `audio/recorded.wav`.
 - Optionally processes recorded WAV files after capture with `--process`.
 - Reports WAV duration, sample rate, and RMS.
 - Reports separate microphone/system RMS for meeting capture when available.
 - Supports explicit microphone and speaker selection with `--mic-index <n>` / `--speaker-index <n>` or `--mic "<name>"` / `--speaker "<name>"`.
-- Provides `nanola devices` and the equivalent `nanola audio devices` alias for listing input/output devices.
-- Provides `nanola meet` as the user-facing default workflow. It records until `q` is pressed or system audio is silent for the configured timeout, then transcribes and summarizes.
-- Keeps `nanola record` as an advanced/raw capture command; `nanola meet` is the normal meeting workflow.
+- Provides `manola devices` and the equivalent `manola audio devices` alias for listing input/output devices.
+- Provides `manola meet` as the user-facing default workflow. It records until `q` is pressed or system audio is silent for the configured timeout, then transcribes and summarizes.
+- Keeps `manola record` as an advanced/raw capture command; `manola meet` is the normal meeting workflow.
 - Fails `record --source meeting` when either microphone or system audio appears silent, unless `--allow-partial` is supplied.
 - Keeps the diagnostic WAV at `audio/recorded.wav` when partial capture is rejected.
 
@@ -128,9 +128,9 @@ Observed on the first Windows test machine:
 
 Recorded validation samples:
 
-- `nanola audio test --source mic --duration 3`: RMS `0.005352`.
-- `nanola audio test --source system --duration 10`: RMS `0.006546`.
-- `nanola audio test --source meeting --duration 10`: RMS `0.005141`.
+- `manola audio test --source mic --duration 3`: RMS `0.005352`.
+- `manola audio test --source system --duration 10`: RMS `0.006546`.
+- `manola audio test --source meeting --duration 10`: RMS `0.005141`.
 
 Remaining before recording can be called stable:
 
@@ -161,7 +161,7 @@ Default: no.
 Advanced override:
 
 ```text
-nanola record --allow-partial
+manola record --allow-partial
 ```
 
 ## Rationale

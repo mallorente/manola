@@ -1,6 +1,6 @@
-# Nanola
+# Manola
 
-Nanola is a local-first meeting recorder, transcriber, and report generator.
+Manola is a local-first meeting recorder, transcriber, and report generator.
 
 It records or imports meeting audio, normalizes it with FFmpeg, transcribes it with
 Whisper-compatible backends, generates structured Markdown reports with an
@@ -16,6 +16,9 @@ recording path today.
 - Record microphone, system audio, or combined meeting audio on Windows.
 - Preserve original audio and create a normalized WAV for transcription.
 - Transcribe locally with `faster-whisper`, including CUDA support when available.
+- Show a preview live transcript during `manola meet`.
+- Pause recording during silence and resume when meeting audio returns.
+- Compare baseline vs FFmpeg-enhanced voice audio with `audio enhance-test`.
 - Generate Markdown reports from transcripts through a configured remote LLM.
 - Keep a private local meeting archive and optionally export selected files to a
   synced shared folder such as Google Drive or OneDrive.
@@ -24,23 +27,24 @@ recording path today.
 
 ## Status
 
-Nanola is an early MVP. The local CLI workflow is usable, but the project is not
+Manola is an early MVP. The local CLI workflow is usable, but the project is not
 yet packaged as a stable end-user application.
 
 Implemented workflows include:
 
-- `nanola meet`
-- `nanola process <audio-path>`
-- `nanola import <audio-path>`
-- `nanola transcribe <meeting-id-or-path>`
-- `nanola summarize <meeting-id-or-path>`
-- `nanola export <meeting-id-or-path>`
-- `nanola audio doctor`
-- `nanola audio setup`
-- `nanola models download <model>`
+- `manola meet`
+- `manola process <audio-path>`
+- `manola import <audio-path>`
+- `manola transcribe <meeting-id-or-path>`
+- `manola summarize <meeting-id-or-path>`
+- `manola export <meeting-id-or-path>`
+- `manola audio doctor`
+- `manola audio setup`
+- `manola audio enhance-test <meeting-id-or-audio-path>`
+- `manola models download <model>`
 
-Planned work includes live transcript preview, richer pause/resume recording
-behavior, optional voice enhancement, diarization, and a desktop interface.
+Planned work includes VAD/live diarization, making voice enhancement production
+ready, diarization, and a desktop interface.
 
 ## Requirements
 
@@ -56,37 +60,37 @@ behavior, optional voice enhancement, diarization, and a desktop interface.
 Clone the repository and install dependencies with `uv`:
 
 ```powershell
-git clone https://github.com/mallorente/nanola.git
-cd nanola
+git clone https://github.com/mallorente/manola.git
+cd manola
 uv sync --extra dev
 ```
 
 Run the CLI through `uv`:
 
 ```powershell
-uv run nanola --help
-uv run nanola doctor
+uv run manola --help
+uv run manola doctor
 ```
 
-Do not assume `nanola` is installed globally during development.
+Do not assume `manola` is installed globally during development.
 
 ## Configuration
 
 Create the local configuration files:
 
 ```powershell
-uv run nanola config init
+uv run manola config init
 ```
 
 Configuration is stored outside the repository:
 
 ```text
-~/.nanola/config.toml
-~/.nanola/secrets.toml
+~/.manola/config.toml
+~/.manola/secrets.toml
 ```
 
 Secrets are resolved from environment variables first, then from
-`~/.nanola/secrets.toml`.
+`~/.manola/secrets.toml`.
 
 The default report profile expects `OPENROUTER_API_KEY` unless the configuration
 is changed:
@@ -103,43 +107,43 @@ folders.
 Process an existing recording:
 
 ```powershell
-uv run nanola process path\to\recording.m4a --language es
+uv run manola process path\to\recording.m4a --language es
 ```
 
 Record and process a meeting:
 
 ```powershell
-uv run nanola meet --language es
+uv run manola meet --language es
 ```
 
 Record a short meeting capture test:
 
 ```powershell
-uv run nanola audio test --source meeting --duration 10
+uv run manola audio test --source meeting --duration 10
 ```
 
 List audio devices:
 
 ```powershell
-uv run nanola devices
+uv run manola devices
 ```
 
 Download a higher-quality local Whisper model:
 
 ```powershell
-uv run nanola models download large-v3 --set-default
+uv run manola models download large-v3 --set-default
 ```
 
 For short or noisy recordings, pass the known language explicitly:
 
 ```powershell
-uv run nanola process path\to\recording.m4a --language es
-uv run nanola process path\to\recording.m4a --language en
+uv run manola process path\to\recording.m4a --language es
+uv run manola process path\to\recording.m4a --language en
 ```
 
 ## Meeting Archive Layout
 
-Nanola keeps the complete local archive private by default:
+Manola keeps the complete local archive private by default:
 
 ```text
 Meetings/
@@ -152,7 +156,7 @@ Meetings/
       normalized.wav
 ```
 
-Recordings created by Nanola use:
+Recordings created by Manola use:
 
 ```text
 audio/
@@ -164,7 +168,7 @@ Original audio is never overwritten.
 
 ## Sharing
 
-Nanola shares through a configured local synced folder, not through a hosted
+Manola shares through a configured local synced folder, not through a hosted
 workspace.
 
 Supported share policies:
@@ -177,7 +181,7 @@ Supported share policies:
 Example:
 
 ```powershell
-uv run nanola process path\to\recording.m4a --language es --share all
+uv run manola process path\to\recording.m4a --language es --share all
 ```
 
 ## Development
@@ -195,24 +199,24 @@ uv run --extra dev python -m pytest --basetemp .tmp-pytest\run
 Run diagnostics:
 
 ```powershell
-uv run nanola doctor
-uv run nanola audio doctor
+uv run manola doctor
+uv run manola audio doctor
 ```
 
 ## Architecture
 
 Main modules:
 
-- `src/nanola/cli.py`: Typer CLI commands
-- `src/nanola/pipeline.py`: import, process, transcribe, summarize orchestration
-- `src/nanola/audio.py`: FFmpeg normalization and audio import
-- `src/nanola/audio_recording.py`: soundcard-based recording helpers
-- `src/nanola/transcription.py`: local and remote transcription
-- `src/nanola/transcribe_worker.py`: isolated CUDA transcription worker
-- `src/nanola/reporting.py`: LLM report generation and fallback reports
-- `src/nanola/exporting.py`: shared-folder export policies
-- `src/nanola/config.py`: local config and secret resolution
-- `src/nanola/doctor.py`: dependency and configuration diagnostics
+- `src/manola/cli.py`: Typer CLI commands
+- `src/manola/pipeline.py`: import, process, transcribe, summarize orchestration
+- `src/manola/audio.py`: FFmpeg normalization and audio import
+- `src/manola/audio_recording.py`: soundcard-based recording helpers
+- `src/manola/transcription.py`: local and remote transcription
+- `src/manola/transcribe_worker.py`: isolated CUDA transcription worker
+- `src/manola/reporting.py`: LLM report generation and fallback reports
+- `src/manola/exporting.py`: shared-folder export policies
+- `src/manola/config.py`: local config and secret resolution
+- `src/manola/doctor.py`: dependency and configuration diagnostics
 
 Product and technical decisions are documented in `docs/`.
 
