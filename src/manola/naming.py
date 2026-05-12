@@ -61,5 +61,5 @@ def meeting_folder_name(
 
 def proposed_archive_parent(workspace_dir: Path, project: str | None, meeting_type: MeetingType) -> Path:
     if project:
-        return workspace_dir / "Projects" / project
+        return workspace_dir / "Projects" / slugify(project, "project")
     return workspace_dir

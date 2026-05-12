@@ -6,6 +6,13 @@ Last updated: 2026-05-12
 
 Manola is a Python CLI managed with `uv` and Typer. The MVP workflow for imported audio and basic Windows recording is implemented.
 
+Security hardening added on 2026-05-12:
+
+- Shared export rejects absolute or parent-traversal paths read from meeting metadata.
+- Project names are slugified before becoming `Meetings/Projects/<project>` folders.
+- `default_generate_llm_report = true` controls the default LLM behavior for `process`, `meet`, and `record --process`; `--llm/--no-llm` still override it.
+- GitHub CI and Dependabot configuration now live under `.github/`.
+
 Working local configuration on the current machine:
 
 - Workspace: `C:/Users/Usuario/Manola/Meetings`

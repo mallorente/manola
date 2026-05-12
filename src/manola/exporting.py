@@ -26,12 +26,19 @@ def export_meeting(meeting_dir: Path, config: AppConfig, policy: SharePolicy | N
     target_dir.mkdir(parents=True, exist_ok=True)
     files = _files_for_policy(chosen_policy, metadata)
     for relative in files:
+        relative = _safe_export_relative_path(relative)
         source = meeting_dir / relative
         if source.exists():
             destination = target_dir / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
     return target_dir
+
+
+def _safe_export_relative_path(path: Path) -> Path:
+    if path.is_absolute() or ".." in path.parts:
+        raise ManolaError(f"Refusing unsafe export path from meeting metadata: {path}")
+    return path
 
 
 def _files_for_policy(policy: SharePolicy, metadata: dict) -> list[Path]:

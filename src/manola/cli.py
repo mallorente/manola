@@ -181,6 +181,10 @@ def _print_llm_privacy_notice(enabled: bool, profile: str | None) -> None:
     typer.echo("  Use --no-llm to keep report generation off.")
 
 
+def _effective_llm(flag: bool | None, config_default: bool) -> bool:
+    return config_default if flag is None else flag
+
+
 def _console_safe_text(text: str, encoding: str | None = None) -> str:
     target_encoding = encoding or sys.stdout.encoding or "utf-8"
     return text.encode(target_encoding, errors="replace").decode(target_encoding, errors="replace")
@@ -211,10 +215,11 @@ def process(
     share: Annotated[SharePolicy, typer.Option("--share")] = SharePolicy.private,
     backend: Annotated[TranscriptionBackend, typer.Option("--backend")] = TranscriptionBackend.local,
     llm_profile: Annotated[str, typer.Option("--llm-profile")] = "deepseek_fast",
-    llm: Annotated[bool, typer.Option("--llm/--no-llm", help="Generate a report with the configured remote LLM.")] = True,
+    llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate a report with the configured remote LLM. Uses default_generate_llm_report from config when omitted.")] = None,
 ) -> None:
     """Process an existing recording into a transcript, report, and local archive."""
     config = load_config()
+    effective_llm = _effective_llm(llm, config.default_generate_llm_report)
     options = ProcessOptions(
         audio_path=audio_path,
         meeting_type=meeting_type,
@@ -228,8 +233,8 @@ def process(
     )
     try:
         _status("Starting process workflow...")
-        _print_llm_privacy_notice(llm, llm_profile)
-        meeting_dir = process_recording(options, config, generate_llm_report=llm, status=_status)
+        _print_llm_privacy_notice(effective_llm, llm_profile)
+        meeting_dir = process_recording(options, config, generate_llm_report=effective_llm, status=_status)
         if share != SharePolicy.private:
             _status(f"Exporting with share policy {share.value}...")
             exported_dir = export_meeting(meeting_dir, config, share)
@@ -715,7 +720,7 @@ def meet(
     attendee: Annotated[list[str] | None, typer.Option("--attendee", help="Attendee name. Can be repeated or comma-separated.")] = None,
     share: Annotated[SharePolicy, typer.Option("--share", help="Shared-folder export policy. `all` exports metadata, report, transcript, and audio.")] = SharePolicy.private,
     llm_profile: Annotated[str | None, typer.Option("--llm-profile", help="Configured remote LLM profile for report generation. Uses default_llm_profile from config when omitted.")] = None,
-    llm: Annotated[bool, typer.Option("--llm/--no-llm", help="Generate report with remote LLM. Use --no-llm to avoid sending transcript to LLM.")] = True,
+    llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate report with remote LLM. Uses default_generate_llm_report from config when omitted.")] = None,
     enrich: Annotated[bool, typer.Option("--enrich/--no-enrich", help="Generate metadata suggestions after transcription when LLM is enabled.")] = True,
     live_transcript: Annotated[bool, typer.Option("--live-transcript/--no-live-transcript", help="Show and persist preview transcript chunks while recording.")] = True,
 ) -> None:
@@ -725,6 +730,7 @@ def meet(
         report = inspect_audio_devices()
         effective_language = language or _configured_language(config.default_language)
         effective_llm_profile = llm_profile or config.default_llm_profile
+        effective_llm = _effective_llm(llm, config.default_generate_llm_report)
         effective_mic_index = mic_index if mic_index is not None else (None if mic else config.default_mic_index)
         effective_speaker_index = speaker_index if speaker_index is not None else (None if speaker else config.default_speaker_index)
         created_at = datetime.now()
@@ -762,9 +768,9 @@ def meet(
             )
         else:
             typer.echo("- live transcript: disabled")
-        typer.echo(f"- report: {'enabled' if llm else 'disabled'} ({effective_llm_profile})")
-        typer.echo(f"- enrichment: {'enabled' if llm and enrich else 'disabled'}")
-        _print_llm_privacy_notice(llm, effective_llm_profile)
+        typer.echo(f"- report: {'enabled' if effective_llm else 'disabled'} ({effective_llm_profile})")
+        typer.echo(f"- enrichment: {'enabled' if effective_llm and enrich else 'disabled'}")
+        _print_llm_privacy_notice(effective_llm, effective_llm_profile)
         typer.echo(f"- share: {share.value}")
         typer.echo(f"- meeting folder: {expected_meeting_dir}")
         typer.echo("")
@@ -813,11 +819,11 @@ def meet(
         _status("Transcribing recorded meeting...")
         transcript_path = transcribe_meeting(meeting_dir, config, status=_status)
         typer.echo(f"Wrote transcript: {transcript_path}")
-        if llm and enrich:
+        if effective_llm and enrich:
             _status("Generating metadata suggestions...")
             suggestions_path = enrich_meeting(meeting_dir, config, status=_status)
             typer.echo(f"Wrote suggestions: {suggestions_path}")
-        if llm:
+        if effective_llm:
             _status("Generating meeting report...")
             report_path = summarize_meeting(meeting_dir, config, status=_status)
             typer.echo(f"Wrote report: {report_path}")
@@ -845,11 +851,12 @@ def record(
     attendee: Annotated[list[str] | None, typer.Option("--attendee", help="Attendee name. Can be repeated or comma-separated.")] = None,
     share: Annotated[SharePolicy, typer.Option("--share", help="Shared-folder export policy. `all` exports metadata, report, transcript, and audio.")] = SharePolicy.private,
     process_after: Annotated[bool, typer.Option("--process/--no-process", help="Transcribe and optionally summarize after recording.")] = False,
-    llm: Annotated[bool, typer.Option("--llm/--no-llm", help="Generate report with remote LLM when --process is used.")] = True,
+    llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate report with remote LLM when --process is used. Uses default_generate_llm_report from config when omitted.")] = None,
     live_transcript: Annotated[bool, typer.Option("--live-transcript/--no-live-transcript", help="Show and persist preview transcript chunks while recording meeting audio.")] = False,
 ) -> None:
     """Advanced: record a raw WAV. Use `manola meet` for the normal meeting workflow."""
     config = load_config()
+    effective_llm = _effective_llm(llm, config.default_generate_llm_report)
     try:
         options = ProcessOptions(
             audio_path=Path("recorded.wav"),
@@ -882,7 +889,7 @@ def record(
         if process_after:
             _status("Processing recorded audio...")
             transcribe_meeting(meeting_dir, config, status=_status)
-            if llm:
+            if effective_llm:
                 _print_llm_privacy_notice(True, None)
                 summarize_meeting(meeting_dir, config, status=_status)
             if share != SharePolicy.private:

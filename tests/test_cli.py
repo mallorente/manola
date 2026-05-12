@@ -269,6 +269,90 @@ def test_meet_uses_configured_defaults_when_flags_are_omitted(monkeypatch, tmp_p
     assert "report: enabled (openai_fallback)" in result.output
 
 
+def test_meet_uses_configured_llm_default_when_flag_is_omitted(monkeypatch, tmp_path: Path) -> None:
+    meeting_dir = tmp_path / "meetings" / "2026-05-08__general__recording"
+
+    class FakeRecording:
+        path = meeting_dir / "audio" / "recorded.wav"
+        duration_seconds = 10.0
+        rms = 0.1
+        sample_rate = 48000
+        silent = False
+        component_rms = {"mic": 0.1, "system": 0.2}
+
+    monkeypatch.setattr(
+        "manola.cli.inspect_audio_devices",
+        lambda: AudioDeviceReport(
+            default_microphone="Mic A",
+            default_speaker="Speaker A",
+            microphones=["Mic A"],
+            speakers=["Speaker A"],
+            loopbacks=["Speaker A Loopback"],
+        ),
+    )
+    monkeypatch.setattr(
+        "manola.cli.load_config",
+        lambda: AppConfig(
+            workspace_dir=tmp_path / "meetings",
+            default_generate_llm_report=False,
+        ),
+    )
+    monkeypatch.setattr("manola.cli.create_recorded_meeting", lambda *args, **kwargs: (meeting_dir, FakeRecording()))
+    monkeypatch.setattr("manola.cli.transcribe_meeting", lambda *args, **kwargs: meeting_dir / "transcript.md")
+
+    def fail_llm_step(*args, **kwargs):
+        raise AssertionError("LLM step should follow config default and stay disabled")
+
+    monkeypatch.setattr("manola.cli.enrich_meeting", fail_llm_step)
+    monkeypatch.setattr("manola.cli.summarize_meeting", fail_llm_step)
+
+    result = runner.invoke(app, ["meet", "--duration", "10"])
+
+    assert result.exit_code == 0
+    assert "report: disabled" in result.output
+    assert "report privacy: disabled" in result.output
+
+
+def test_meet_llm_flag_overrides_configured_default(monkeypatch, tmp_path: Path) -> None:
+    meeting_dir = tmp_path / "meetings" / "2026-05-08__general__recording"
+    report_path = meeting_dir / "report.md"
+
+    class FakeRecording:
+        path = meeting_dir / "audio" / "recorded.wav"
+        duration_seconds = 10.0
+        rms = 0.1
+        sample_rate = 48000
+        silent = False
+        component_rms = {"mic": 0.1, "system": 0.2}
+
+    monkeypatch.setattr(
+        "manola.cli.inspect_audio_devices",
+        lambda: AudioDeviceReport(
+            default_microphone="Mic A",
+            default_speaker="Speaker A",
+            microphones=["Mic A"],
+            speakers=["Speaker A"],
+            loopbacks=["Speaker A Loopback"],
+        ),
+    )
+    monkeypatch.setattr(
+        "manola.cli.load_config",
+        lambda: AppConfig(
+            workspace_dir=tmp_path / "meetings",
+            default_generate_llm_report=False,
+        ),
+    )
+    monkeypatch.setattr("manola.cli.create_recorded_meeting", lambda *args, **kwargs: (meeting_dir, FakeRecording()))
+    monkeypatch.setattr("manola.cli.transcribe_meeting", lambda *args, **kwargs: meeting_dir / "transcript.md")
+    monkeypatch.setattr("manola.cli.enrich_meeting", lambda *args, **kwargs: meeting_dir / "metadata.suggestions.json")
+    monkeypatch.setattr("manola.cli.summarize_meeting", lambda *args, **kwargs: report_path)
+
+    result = runner.invoke(app, ["meet", "--duration", "10", "--llm"])
+
+    assert result.exit_code == 0
+    assert f"Wrote report: {report_path}" in result.output
+
+
 def test_meet_can_disable_enrichment(monkeypatch, tmp_path: Path) -> None:
     meeting_dir = tmp_path / "meetings" / "2026-05-08__general__recording"
 

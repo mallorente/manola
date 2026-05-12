@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run tests
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .tmp-pytest | Out-Null
+          $env:UV_CACHE_DIR='.uv-cache'
+          $env:TMP=(Resolve-Path .tmp-pytest).Path
+          $env:TEMP=$env:TMP
+          uv run --extra dev python -m pytest --basetemp .tmp-pytest\run

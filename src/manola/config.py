@@ -29,6 +29,7 @@ class AppConfig(BaseModel):
     models_dir: Path = Path.home() / ".manola" / "models"
     prompts_dir: Path = Path.home() / ".manola" / "prompts"
     default_llm_profile: str = "deepseek_fast"
+    default_generate_llm_report: bool = True
     default_transcription_backend: str = "local"
     default_language: str = "auto"
     default_mic_index: int | None = None
@@ -152,6 +153,7 @@ def render_config(config: AppConfig) -> str:
         f'models_dir = "{_toml_path(config.models_dir)}"',
         f'prompts_dir = "{_toml_path(config.prompts_dir)}"',
         f'default_llm_profile = "{config.default_llm_profile}"',
+        f"default_generate_llm_report = {str(config.default_generate_llm_report).lower()}",
         f'default_transcription_backend = "{config.default_transcription_backend}"',
         f'default_language = "{config.default_language}"',
         _optional_int_line("default_mic_index", config.default_mic_index, 1),

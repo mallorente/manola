@@ -118,6 +118,8 @@ Secrets are resolved from environment variables first, then from
 The default report profile is `deepseek_fast` and expects `OPENCODE_API_KEY`.
 Other built-in profiles include `gemini_fast` and `sonnet_4_6`, which use
 `OPENROUTER_API_KEY`, and `openai_fallback`, which uses `OPENAI_API_KEY`.
+Remote LLM report generation is controlled by `default_generate_llm_report`
+in `~/.manola/config.toml`; the default is `true`.
 
 ```powershell
 $env:OPENCODE_API_KEY = "..."

@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from manola.config import AppConfig
 from manola.exporting import export_meeting
+from manola.errors import ManolaError
 from manola.models import SharePolicy
 
 
@@ -68,3 +71,23 @@ def test_export_all_uses_metadata_audio_paths(tmp_path: Path) -> None:
     assert (target / "audio" / "original.mp3").exists()
     assert (target / "audio" / "normalized.wav").exists()
     assert (target / "metadata.json").exists()
+
+
+def test_export_all_rejects_metadata_path_traversal(tmp_path: Path) -> None:
+    meeting_dir = tmp_path / "meeting"
+    meeting_dir.mkdir()
+    (meeting_dir / "report.md").write_text("report", encoding="utf-8")
+    (meeting_dir / "transcript.md").write_text("transcript", encoding="utf-8")
+    (meeting_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "share_policy": "all",
+                "audio_original": "../outside.wav",
+                "audio_normalized": "audio/normalized.wav",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ManolaError, match="unsafe export path"):
+        export_meeting(meeting_dir, AppConfig(shared_dir=tmp_path / "shared"))

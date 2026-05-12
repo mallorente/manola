@@ -39,6 +39,12 @@ def test_proposed_archive_parent_uses_project_when_present() -> None:
     assert parent == Path("Meetings") / "Projects" / "manola"
 
 
+def test_proposed_archive_parent_sanitizes_project_path_segments() -> None:
+    parent = proposed_archive_parent(Path("Meetings"), "../Client A / Secret", MeetingType.general)
+
+    assert parent == Path("Meetings") / "Projects" / "client-a-secret"
+
+
 def test_every_meeting_type_has_folder_labels() -> None:
     missing = [meeting_type.value for meeting_type in MeetingType if meeting_type not in TYPE_FOLDER_NAMES]
 

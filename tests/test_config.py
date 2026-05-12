@@ -14,6 +14,7 @@ def test_render_config_outputs_valid_toml() -> None:
 
     assert parsed["workspace_dir"] == "C:/Meetings"
     assert parsed["default_llm_profile"] == "deepseek_fast"
+    assert parsed["default_generate_llm_report"] is True
     assert "default_mic_index" not in parsed
     assert "default_speaker_index" not in parsed
     assert "llm_profiles" in parsed
