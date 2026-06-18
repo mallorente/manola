@@ -72,6 +72,11 @@ const I18N = {
     copyCommand: "Copy CLI command",
     regenerateReport: "Regenerate report",
     retranscribe: "Retranscribe",
+    jobStarting: "Starting…",
+    jobRunning: "Running…",
+    jobDone: "Done",
+    jobFailed: "Failed",
+    jobRetry: "Try again",
     noReport: "No report generated yet.",
     noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
     noTranscript: "No transcript generated yet.",
@@ -160,6 +165,11 @@ const I18N = {
     copyCommand: "Copiar comando CLI",
     regenerateReport: "Regenerar informe",
     retranscribe: "Retranscribir",
+    jobStarting: "Iniciando…",
+    jobRunning: "En curso…",
+    jobDone: "Hecho",
+    jobFailed: "Fallo",
+    jobRetry: "Reintentar",
     noReport: "Aun no hay informe generado.",
     noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
     noTranscript: "Aun no hay transcripcion generada.",
@@ -225,6 +235,78 @@ async function api(path, options) {
   const res = await fetch(path, options);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+// --- Reusable async-job component (ADR-0003) --------------------------------
+// runJob() is the single entry point every long-running UI action uses: it
+// POSTs to /api/jobs/<action>, polls /api/jobs/<id> ~1s, renders the
+// running/progress/done/failed state into `mount`, and calls onDone(result) on
+// success. Batch 3 actions (regenerate report, enrich, export, repair) reuse
+// it; remote-LLM actions pass { confirmRemoteLlm: true } to clear the privacy
+// gate. See PR for #31.
+async function runJob(action, params, mount, { confirmRemoteLlm = false, onDone } = {}) {
+  const body = { ...(params || {}) };
+  if (confirmRemoteLlm) body.confirm_remote_llm = true;
+  renderJobStatus(mount, { status: "starting" });
+  let job;
+  try {
+    job = await api(`/api/jobs/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    renderJobStatus(mount, { status: "failed", error: err.message });
+    return null;
+  }
+  return pollJob(job.id, mount, onDone);
+}
+
+async function pollJob(jobId, mount, onDone) {
+  for (;;) {
+    let job;
+    try {
+      job = await api(`/api/jobs/${jobId}`);
+    } catch (err) {
+      renderJobStatus(mount, { status: "failed", error: err.message });
+      return null;
+    }
+    renderJobStatus(mount, job);
+    if (job.status === "done") {
+      if (onDone) await onDone(job.result);
+      return job;
+    }
+    if (job.status === "failed") return job;
+    await delay(1000);
+  }
+}
+
+function renderJobStatus(mount, job) {
+  if (!mount) return;
+  const status = job.status || "starting";
+  if (status === "failed") {
+    mount.innerHTML = `<span class="job-status failed"><span class="job-dot failed"></span>${t("jobFailed")}: ${escapeHtml(job.error || "")}</span>`;
+    return;
+  }
+  if (status === "done") {
+    mount.innerHTML = `<span class="job-status done"><span class="job-dot done"></span>${t("jobDone")}</span>`;
+    return;
+  }
+  const label = status === "running" ? t("jobRunning") : t("jobStarting");
+  const step = job.step && status === "running" ? ` · ${escapeHtml(job.step)}` : "";
+  mount.innerHTML = `<span class="job-status running"><span class="spinner"></span>${label}${step}</span>`;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Re-fetch a single meeting after a job mutates it, then re-render in place.
+async function refreshMeeting(path) {
+  const updated = await api(`/api/meeting?path=${encodeURIComponent(path)}`);
+  const idx = (state.data?.meetings || []).findIndex((x) => x.path === path);
+  if (idx >= 0) state.data.meetings[idx] = updated;
+  render();
 }
 
 async function boot() {
@@ -485,9 +567,28 @@ function renderTranscript(body, m) {
           <span>${escapeHtml(m.language || "auto")}</span>
         </div>
       </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("retranscribe")}</button>
+      <div class="action-with-status">
+        <button class="secondary-button" id="retranscribeBtn" type="button">${t("retranscribe")}</button>
+        <span class="job-mount" id="retranscribeJob"></span>
+      </div>
     </div>
-    ${m.transcript_text ? (lines.length ? lines.map((line) => `<div class="transcript-line"><div class="timestamp">${escapeHtml(line.time || "")}</div><div>${line.speaker ? `<strong class="speaker">${escapeHtml(line.speaker)}</strong>` : ""}${escapeHtml(line.text)}</div></div>`).join("") : `<div class="markdown">${escapeHtml(m.transcript_text)}</div>`) : `<div class="empty"><strong>${t("noTranscript")}</strong><p>${t("noTranscriptSub")}</p>${gapButton("transcribeBackend")}</div>`}`;
+    ${m.transcript_text ? (lines.length ? lines.map((line) => `<div class="transcript-line"><div class="timestamp">${escapeHtml(line.time || "")}</div><div>${line.speaker ? `<strong class="speaker">${escapeHtml(line.speaker)}</strong>` : ""}${escapeHtml(line.text)}</div></div>`).join("") : `<div class="markdown">${escapeHtml(m.transcript_text)}</div>`) : `<div class="empty"><strong>${t("noTranscript")}</strong><p>${t("noTranscriptSub")}</p></div>`}`;
+  bindRetranscribe(m);
+}
+
+function bindRetranscribe(m) {
+  const btn = document.getElementById("retranscribeBtn");
+  const mount = document.getElementById("retranscribeJob");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    await runJob("transcribe", { meeting: m.path, force: true }, mount, {
+      onDone: async () => {
+        await refreshMeeting(m.path);
+      },
+    });
+    btn.disabled = false;
+  });
 }
 
 function renderReport(body, m) {
