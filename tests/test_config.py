@@ -18,9 +18,9 @@ def test_render_config_outputs_valid_toml() -> None:
     assert "default_mic_index" not in parsed
     assert "default_speaker_index" not in parsed
     assert "llm_profiles" in parsed
-    assert parsed["llm_profiles"]["deepseek_fast"]["base_url"] == "https://opencode.ai/zen/go/v1"
-    assert parsed["llm_profiles"]["deepseek_fast"]["model"] == "deepseek-v4-flash"
-    assert parsed["llm_profiles"]["deepseek_fast"]["api_key_env"] == "OPENCODE_API_KEY"
+    assert parsed["llm_profiles"]["deepseek_fast"]["base_url"] == "https://openrouter.ai/api/v1"
+    assert parsed["llm_profiles"]["deepseek_fast"]["model"] == "deepseek/deepseek-v4-flash"
+    assert parsed["llm_profiles"]["deepseek_fast"]["api_key_env"] == "OPENROUTER_API_KEY"
     assert parsed["llm_profiles"]["deepseek_fast"]["temperature"] == 0.2
     assert parsed["llm_profiles"]["deepseek_fast"]["enrichment_temperature"] == 0.0
     assert parsed["llm_profiles"]["gemini_fast"]["model"] == "google/gemini-2.5-flash-lite"

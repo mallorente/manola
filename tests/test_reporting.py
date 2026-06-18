@@ -74,7 +74,7 @@ def test_generate_report_uses_profile_specific_prompt(monkeypatch, tmp_path: Pat
         captured.update(kwargs)
         return Response()
 
-    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr("manola.reporting.httpx.post", fake_post)
 
     generate_report(
@@ -88,7 +88,7 @@ def test_generate_report_uses_profile_specific_prompt(monkeypatch, tmp_path: Pat
     assert "DeepSeek V4 Flash" in messages[0]["content"]
     assert "RTF prompt" in messages[1]["content"]
     assert "LLM profile: deepseek_fast" in messages[1]["content"]
-    assert "LLM model: deepseek-v4-flash" in messages[1]["content"]
+    assert "LLM model: deepseek/deepseek-v4-flash" in messages[1]["content"]
 
 
 def test_generate_metadata_suggestions_parses_json(monkeypatch, tmp_path: Path) -> None:

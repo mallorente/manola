@@ -49,9 +49,9 @@ class AppConfig(BaseModel):
     llm_profiles: dict[str, LlmProfile] = Field(
         default_factory=lambda: {
             "deepseek_fast": LlmProfile(
-                base_url="https://opencode.ai/zen/go/v1",
-                model="deepseek-v4-flash",
-                api_key_env="OPENCODE_API_KEY",
+                base_url="https://openrouter.ai/api/v1",
+                model="deepseek/deepseek-v4-flash",
+                api_key_env="OPENROUTER_API_KEY",
                 thinking=False,
                 temperature=0.2,
                 enrichment_temperature=0.0,
@@ -123,7 +123,6 @@ def write_secrets_template(*, overwrite: bool = False) -> Path:
         "\n".join(
             [
                 "# Manola secrets. Prefer environment variables when possible.",
-                '# OPENCODE_API_KEY = "..."',
                 '# OPENROUTER_API_KEY = "..."',
                 '# OPENAI_API_KEY = "..."',
                 '# WHISPER_API_KEY = "..."',

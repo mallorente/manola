@@ -289,3 +289,38 @@ def test_create_recorded_meeting_enables_live_transcript_for_timed_meeting(monke
     assert captured["duration_seconds"] == 2
     assert result.rms == 0.1
     assert (meeting_dir / "live_transcript.md").read_text(encoding="utf-8") == "live preview\n"
+
+
+def test_create_recorded_meeting_forwards_audio_level_callback(monkeypatch, tmp_path: Path) -> None:
+    class FakeRecording:
+        path = tmp_path / "meetings" / "audio" / "recorded.wav"
+        duration_seconds = 2.0
+        rms = 0.1
+        sample_rate = 48000
+        silent = False
+        component_rms = {"mic": 0.1, "system": 0.2}
+
+    captured = {}
+
+    def fake_record_meeting_until_stopped(*, target, on_audio_level, **kwargs):
+        captured["on_audio_level"] = on_audio_level
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("wav", encoding="utf-8")
+        on_audio_level({"mic": 0.1, "system": 0.2})
+        return FakeRecording()
+
+    levels = []
+    audio_level = levels.append
+    monkeypatch.setattr("manola.pipeline.record_meeting_until_stopped", fake_record_meeting_until_stopped)
+    monkeypatch.setattr("manola.pipeline.normalize_audio", fake_normalize)
+
+    create_recorded_meeting(
+        ProcessOptions(audio_path=Path("placeholder.wav"), title="Measured Call"),
+        AppConfig(workspace_dir=tmp_path / "meetings"),
+        source="meeting",
+        duration_seconds=None,
+        audio_level=audio_level,
+    )
+
+    assert captured["on_audio_level"] is audio_level
+    assert levels == [{"mic": 0.1, "system": 0.2}]

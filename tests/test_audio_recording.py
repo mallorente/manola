@@ -4,7 +4,16 @@ import warnings
 import numpy as np
 import pytest
 
-from manola.audio_recording import record_wav, rms_float, write_wav, _device_by_index, _match_device, _mix_audio, _record_frames
+from manola.audio_recording import (
+    record_wav,
+    rms_float,
+    write_wav,
+    _active_loopback,
+    _device_by_index,
+    _match_device,
+    _mix_audio,
+    _record_frames,
+)
 from manola.errors import ManolaError
 
 
@@ -85,6 +94,34 @@ def test_record_wav_allows_partial_meeting_capture_when_requested(monkeypatch, t
     )
 
     assert result.component_rms == {"mic": 0.1, "system": 0.0}
+
+
+def test_active_loopback_selects_loudest_signal(monkeypatch) -> None:
+    class Device:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.isloopback = True
+
+    quiet = Device("Quiet loopback")
+    loud = Device("Loud loopback")
+
+    class Soundcard:
+        def all_microphones(self, *, include_loopback: bool):
+            assert include_loopback is True
+            return [quiet, loud]
+
+    def fake_record_device(device, frames: int, sample_rate: int):
+        value = 0.01 if device is quiet else 0.2
+        return np.ones(frames, dtype=np.float32) * value
+
+    monkeypatch.setattr("manola.audio_recording._record_device", fake_record_device)
+
+    selected = _active_loopback(Soundcard(), sample_rate=16000, probe_seconds=0.1)
+
+    assert selected is not None
+    device, rms = selected
+    assert device is loud
+    assert rms == pytest.approx(0.2)
 
 
 def test_record_frames_suppresses_soundcard_discontinuity_warning() -> None:

@@ -269,6 +269,49 @@ def test_meet_uses_configured_defaults_when_flags_are_omitted(monkeypatch, tmp_p
     assert "report: enabled (openai_fallback)" in result.output
 
 
+def test_meet_auto_speaker_ignores_configured_speaker_default(monkeypatch, tmp_path: Path) -> None:
+    meeting_dir = tmp_path / "meetings" / "2026-05-08__general__recording"
+    captured = {}
+
+    class FakeRecording:
+        path = meeting_dir / "audio" / "recorded.wav"
+        duration_seconds = 10.0
+        rms = 0.1
+        sample_rate = 48000
+        silent = False
+        component_rms = {"mic": 0.1, "system": 0.2}
+
+    monkeypatch.setattr(
+        "manola.cli.inspect_audio_devices",
+        lambda: AudioDeviceReport(
+            default_microphone="Mic A",
+            default_speaker="Speaker A",
+            microphones=["Mic A"],
+            speakers=["Speaker A", "Speaker B", "Speaker C"],
+            loopbacks=["Speaker A Loopback", "Speaker C Loopback"],
+        ),
+    )
+    monkeypatch.setattr(
+        "manola.cli.load_config",
+        lambda: AppConfig(workspace_dir=tmp_path / "meetings", default_speaker_index=3),
+    )
+
+    def fake_create_recorded_meeting(*args, **kwargs):
+        captured.update(kwargs)
+        return meeting_dir, FakeRecording()
+
+    monkeypatch.setattr("manola.cli.create_recorded_meeting", fake_create_recorded_meeting)
+    monkeypatch.setattr("manola.cli.transcribe_meeting", lambda *args, **kwargs: meeting_dir / "transcript.md")
+    monkeypatch.setattr("manola.cli.enrich_meeting", lambda *args, **kwargs: meeting_dir / "metadata.suggestions.json")
+    monkeypatch.setattr("manola.cli.summarize_meeting", lambda *args, **kwargs: meeting_dir / "report.md")
+
+    result = runner.invoke(app, ["meet", "--duration", "10", "--auto-speaker"])
+
+    assert result.exit_code == 0
+    assert captured["speaker_index"] is None
+    assert "speaker/system audio: auto" in result.output
+
+
 def test_meet_uses_configured_llm_default_when_flag_is_omitted(monkeypatch, tmp_path: Path) -> None:
     meeting_dir = tmp_path / "meetings" / "2026-05-08__general__recording"
 
@@ -728,4 +771,3 @@ def test_audio_enhance_test_standalone_without_transcription(monkeypatch, tmp_pa
     assert result.exit_code == 0
     assert enhanced.read_text(encoding="utf-8") == "enhanced"
     assert f"Wrote enhanced audio: {enhanced}" in result.output
-

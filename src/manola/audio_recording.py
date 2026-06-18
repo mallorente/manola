@@ -155,6 +155,7 @@ def record_meeting_until_stopped(
     chunk_seconds: float = 1.0,
     status: Callable[[str], None] | None = None,
     on_audio_chunk: Callable[[np.ndarray, int], None] | None = None,
+    on_audio_level: Callable[[dict[str, float]], None] | None = None,
 ) -> AudioTestResult:
     if duration_seconds is not None and duration_seconds <= 0:
         raise ManolaError("Recording duration must be greater than zero.")
@@ -168,7 +169,7 @@ def record_meeting_until_stopped(
     target.parent.mkdir(parents=True, exist_ok=True)
     sc = _soundcard()
     microphone = _microphone(sc, mic_name, mic_index)
-    loopback = _loopback(sc, speaker_name, speaker_index)
+    loopback = _select_loopback(sc, speaker_name, speaker_index, sample_rate, status)
     chunk_frames = max(1, int(sample_rate * chunk_seconds))
     max_frames = None if duration_seconds is None else duration_seconds * sample_rate
     stop_key = stop_key.casefold()
@@ -209,6 +210,8 @@ def record_meeting_until_stopped(
 
                     mic_rms = rms_float(mic_mono)
                     system_rms = rms_float(system_mono)
+                    if on_audio_level is not None:
+                        on_audio_level({"mic": mic_rms, "system": system_rms})
                     active_audio = mic_rms > SILENCE_RMS_THRESHOLD or system_rms > SILENCE_RMS_THRESHOLD
                     pressed_keys = _pressed_keys()
                     stop_pressed = stop_key in pressed_keys
@@ -439,6 +442,48 @@ def _loopback(sc, speaker_name: str | None, speaker_index: int | None):
             f"No loopback microphone found for speaker '{selected_speaker_name}'. Available loopbacks: {available}"
         )
     return loopbacks[0]
+
+
+def _select_loopback(
+    sc,
+    speaker_name: str | None,
+    speaker_index: int | None,
+    sample_rate: int,
+    status: Callable[[str], None] | None = None,
+):
+    if speaker_name is not None or speaker_index is not None:
+        return _loopback(sc, speaker_name, speaker_index)
+
+    active = _active_loopback(sc, sample_rate=sample_rate, probe_seconds=0.5)
+    if active is None:
+        return _loopback(sc, speaker_name, speaker_index)
+
+    loopback, rms = active
+    if status:
+        status(f"Auto-selected system audio loopback: {_device_name(loopback)} (RMS {rms:0.6f}).")
+    return loopback
+
+
+def _active_loopback(sc, *, sample_rate: int, probe_seconds: float):
+    loopbacks = _loopback_microphones(sc)
+    if not loopbacks:
+        return None
+    frames = max(1, int(sample_rate * probe_seconds))
+    results = []
+    with ThreadPoolExecutor(max_workers=min(len(loopbacks), 4)) as executor:
+        futures = [(device, executor.submit(_record_device, device, frames, sample_rate)) for device in loopbacks]
+        for device, future in futures:
+            try:
+                rms = rms_float(future.result())
+            except Exception:
+                continue
+            results.append((device, rms))
+    if not results:
+        return None
+    device, rms = max(results, key=lambda result: result[1])
+    if rms <= SILENCE_RMS_THRESHOLD:
+        return None
+    return device, rms
 
 
 def _loopback_microphones(sc) -> list:
