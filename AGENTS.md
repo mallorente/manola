@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `mallorente/manola`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The repo uses the default triage label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo using the root project docs and ADRs under `docs/`. See `docs/agents/domain.md`.
+
 ## Project
 
 Manola is a local-first meeting recorder, transcriber, and report generator.
@@ -124,3 +138,51 @@ Use ADRs for durable technical decisions:
 - ADR says why a technical approach was chosen and what tradeoffs it creates.
 
 Update `docs/STATUS.md` after meaningful implementation milestones so future sessions can resume quickly.
+
+## Roadmap and Batched Delivery
+
+Active product work is planned in two PRDs and delivered in dependency-ordered
+batches with human-check gates. Future sessions should follow this workflow
+rather than inventing a new plan.
+
+Planning sources:
+
+- `docs/PRD-UI-Functional-Completion.md` — Batches 1–4: make the web UI fully
+  usable by a non-technical user with no terminal. Backed by
+  `docs/ADR-0003-ui-job-model.md` (in-process job registry + polling, single-GPU
+  queue, remote-LLM privacy gate).
+- `docs/PRD-Future-Vision.md` — epics F1–F7 (intelligence layer). Not yet
+  agent-ready; open questions must be resolved before any becomes
+  `ready-for-agent`.
+- GitHub Issues in `mallorente/manola` are the live tracker (see
+  `docs/agents/issue-tracker.md`). PRDs are #58 (UI completion) and #59 (future
+  vision).
+
+How batches and gates work:
+
+- Each batch is a GitHub **Milestone** (`Batch 1 · …` through `Batch 5 · …`)
+  with one **tracking issue** (#53–#57) that holds the human-check checklist.
+- Only the **active** batch's issues carry `ready-for-agent`. Later batches stay
+  `needs-triage` until their gate opens. Tracking issues carry
+  `ready-for-human`.
+
+How to proceed in a session:
+
+1. Find the active batch: the milestone whose implementation issues are labeled
+   `ready-for-agent`. Work only those issues. (Batch 1 = #26–#29 at publish
+   time.)
+2. Do not start a later batch's issues, and do not start any `future` epic
+   (#46–#52). If the active batch is fully merged, stop and let the human run
+   the gate — do not self-promote the next batch.
+3. When the human confirms a batch's tracking-issue checklist passes, flip the
+   next milestone's implementation issues from `needs-triage` to
+   `ready-for-agent` (e.g. `gh issue edit <n> --add-label ready-for-agent
+   --remove-label needs-triage`), then comment on its tracking issue that the
+   gate is open.
+4. Batch 5 (near-term capability, #42–#45) is independent of the UI chain and
+   can be scheduled at any time.
+5. Keep `docs/STATUS.md` updated as batches land.
+
+Note: `gh issue list --label …` can panic on this Windows host (keyring bug).
+Use the REST path instead, e.g.
+`gh api "repos/mallorente/manola/issues?labels=ready-for-agent&state=open"`.

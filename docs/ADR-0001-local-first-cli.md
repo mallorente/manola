@@ -24,7 +24,7 @@ Core technical decisions:
 - `faster-whisper` as the primary local transcription backend.
 - Remote Whisper-compatible transcription supported from the start.
 - Remote OpenAI-compatible LLM abstraction for report generation.
-- DeepSeek `deepseek-v4-flash` through OpenCode Go as the default report model.
+- DeepSeek `deepseek/deepseek-v4-flash` through OpenRouter as the default report model.
 - Gemini Flash-Lite through OpenRouter as a cheap alternate report model.
 - Claude Sonnet through OpenRouter as the premium report model.
 - OpenAI `gpt-4.1-mini` as an optional fallback.
@@ -72,12 +72,12 @@ default_transcription_backend = "local"
 default_language = "auto"
 
 [llm_profiles.deepseek_fast]
-base_url = "https://opencode.ai/zen/go/v1"
-model = "deepseek-v4-flash"
+base_url = "https://openrouter.ai/api/v1"
+model = "deepseek/deepseek-v4-flash"
 thinking = false
 temperature = 0.2
 enrichment_temperature = 0.0
-api_key_env = "OPENCODE_API_KEY"
+api_key_env = "OPENROUTER_API_KEY"
 
 [llm_profiles.gemini_fast]
 base_url = "https://openrouter.ai/api/v1"
