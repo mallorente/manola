@@ -8,12 +8,17 @@ import urllib.request
 import wave
 from http.server import ThreadingHTTPServer
 
+import pytest
+
 from manola.config import AppConfig
 from manola.jobs import JobRegistry
 from manola.ui_server import (
+    CONFIG_WRITE_FIELDS,
     ManolaUiHandler,
     audio_info,
+    build_job_registry,
     build_state,
+    coerce_config_value,
     meeting_health,
     read_meeting,
     safe_devices,
@@ -207,6 +212,124 @@ def test_unknown_job_action_returns_404():
             raise AssertionError("expected HTTP 404")
         except urllib.error.HTTPError as exc:
             assert exc.code == 404
+    finally:
+        server.shutdown()
+        registry.close()
+
+
+def _post_path(base, path, payload):
+    request = urllib.request.Request(
+        f"{base}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request) as response:
+        return response.status, json.loads(response.read().decode("utf-8"))
+
+
+def test_build_job_registry_wires_batch_3_actions():
+    registry = build_job_registry()
+    try:
+        assert set(registry._handlers) == {"transcribe", "summarize", "enrich", "export", "repair"}
+        assert registry._gpu_actions == frozenset({"transcribe", "repair"})
+        # summarize + enrich must be gated by the remote-LLM privacy flag.
+        assert {"summarize", "enrich"} <= registry._remote_llm_actions
+    finally:
+        registry.close()
+
+
+def test_coerce_config_value_validates_and_coerces():
+    assert coerce_config_value("default_generate_llm_report", "true") is True
+    assert coerce_config_value("default_generate_llm_report", "false") is False
+    assert coerce_config_value("default_mic_index", "") is None
+    assert coerce_config_value("default_mic_index", "3") == 3
+    assert coerce_config_value("shared_dir", "") is None
+    assert coerce_config_value("default_transcription_backend", "local") == "local"
+
+    with pytest.raises(ValueError):
+        coerce_config_value("openai_api_key", "secret")  # not whitelisted
+    with pytest.raises(ValueError):
+        coerce_config_value("default_transcription_backend", "bogus")
+    with pytest.raises(ValueError):
+        coerce_config_value("default_mic_index", "abc")
+    with pytest.raises(ValueError):
+        coerce_config_value("workspace_dir", "")  # required path
+
+
+def test_config_endpoint_writes_whitelisted_field(monkeypatch):
+    writes = {}
+    monkeypatch.setattr("manola.ui_server.update_config_value", lambda name, value: writes.update({name: value}))
+    monkeypatch.setattr("manola.ui_server.load_config", lambda: AppConfig(workspace_dir="/tmp"))
+
+    registry = JobRegistry({})
+    server, base = _serving_handler(registry)
+    try:
+        status, config = _post_path(base, "/api/config", {"default_language": "es"})
+        assert status == 200
+        assert writes == {"default_language": "es"}
+        # Response echoes the reloaded public config (load_config is mocked here).
+        assert "default_language" in config
+        assert "secrets_path" in config
+    finally:
+        server.shutdown()
+        registry.close()
+
+
+def test_config_endpoint_rejects_non_whitelisted_field(monkeypatch):
+    calls = []
+    monkeypatch.setattr("manola.ui_server.update_config_value", lambda name, value: calls.append(name))
+
+    registry = JobRegistry({})
+    server, base = _serving_handler(registry)
+    try:
+        try:
+            _post_path(base, "/api/config", {"openai_api_key": "secret"})
+            raise AssertionError("expected HTTP 400")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 400
+        assert calls == []  # nothing was written
+    finally:
+        server.shutdown()
+        registry.close()
+
+
+def test_apply_metadata_endpoint_updates_meeting(tmp_path, monkeypatch):
+    meeting_dir = tmp_path / "2026-06-18__general__apply-test"
+    (meeting_dir / "audio").mkdir(parents=True)
+    metadata = {
+        "id": meeting_dir.name,
+        "title": "Apply test",
+        "created_at": "2026-06-18T10:00:00",
+        "meeting_type": "general",
+        "project": None,
+        "language": "en",
+        "attendees": ["Ada"],
+        "share_policy": "private",
+        "transcription_backend": "local",
+        "transcription_model": "large-v3",
+        "transcription_device": "cuda",
+        "transcription_compute_type": "float16",
+        "llm_profile": "deepseek_fast",
+        "audio_original": "audio/original.m4a",
+        "audio_normalized": "audio/normalized.wav",
+        "transcript": "transcript.md",
+        "report": "report.md",
+    }
+    (meeting_dir / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    (meeting_dir / "transcript.md").write_text("hi", encoding="utf-8")
+    (meeting_dir / "report.md").write_text("r", encoding="utf-8")
+
+    monkeypatch.setattr("manola.ui_server.load_config", lambda: AppConfig(workspace_dir=tmp_path))
+
+    registry = JobRegistry({})
+    server, base = _serving_handler(registry)
+    try:
+        status, meeting = _post_path(
+            base, "/api/meeting/apply", {"meeting": str(meeting_dir), "updates": {"project": "Atlas"}}
+        )
+        assert status == 200
+        assert meeting["project"] == "Atlas"
     finally:
         server.shutdown()
         registry.close()

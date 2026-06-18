@@ -141,25 +141,29 @@ def test_audio_tab_lists_artifacts_warnings_and_repair_gap():
     assert ".audio-path" in css
 
 
-def test_metadata_tab_is_read_only_and_shows_suggestions():
+def test_metadata_tab_enriches_and_applies_suggestions():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
 
     assert "function renderMetadata(body, m)" in js
     assert '["Attendees", (m.attendees || []).join(", ")]' in js
     assert '["LLM profile", m.llm_profile]' in js
-    assert 't("metadataReadonly")' in js
-    assert 't("saveMetadata")' in js
+    # Enrich runs as a privacy-gated job; suggestions can be applied per field.
+    assert 'document.getElementById("enrichBtn")' in js
+    assert '"enrich"' in js
     assert "function metadataSuggestions(suggestions)" in js
     assert "suggestions.suggested_title" in js
     assert "suggestions.possible_name_corrections" in js
-    assert 't("applySuggestions")' in js
+    assert "function applySuggestion(m, updates, mount)" in js
+    assert 'apiPost("/api/meeting/apply"' in js
+    assert "function bindMetadataApply(m)" in js
+    assert '"applyTitle"' in js
     assert "function metadataValue(value)" in js
     assert "none</span>" in js
     assert ".metadata-actions" in css
 
 
-def test_settings_distinguishes_browser_preferences_from_read_only_config():
+def test_settings_has_editable_whitelisted_fields_and_read_only_config():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
@@ -167,20 +171,23 @@ def test_settings_distinguishes_browser_preferences_from_read_only_config():
     assert 'localStorage.getItem("manola.appLanguage")' in js
     assert 'localStorage.setItem("manola.appLanguage", state.lang)' in js
     assert 'localStorage.getItem("manola.highlightColor")' in js
-    assert 'localStorage.setItem("manola.highlightColor", state.highlight)' in js
     assert 'id="appLanguage"' in html
     assert 'id="highlightColor"' in html
     assert 't("backendConfig")' in js
     assert 't("backendConfigSub")' in js
-    assert '[t("sharing"),' in js
-    assert '[t("prompts"),' in js
-    assert 'config.prompts_dir' in js
-    assert 'config.shared_dir || "not configured"' in js
+    # Whitelisted fields are editable and persisted via POST /api/config.
+    assert "function settingControl(field, label, kind, value, options)" in js
+    assert "function saveConfig(field, value, mount)" in js
+    assert 'apiPost("/api/config"' in js
+    assert '"workspace_dir"' in js
+    assert '"default_llm_profile"' in js
+    assert '"local_whisper_device"' in js
+    # Non-editable backend values remain read-only.
     assert 'aria-readonly="true"' in js
     assert ".readonly-value" in css
 
 
-def test_devices_and_doctor_show_cli_alternatives_and_disabled_actions():
+def test_devices_tab_selects_and_saves_capture_devices():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
 
@@ -188,15 +195,20 @@ def test_devices_and_doctor_show_cli_alternatives_and_disabled_actions():
     assert "report.microphones" in js
     assert "report.speakers" in js
     assert "report.loopbacks" in js
-    assert 't("testDevices")' in js
-    assert "uv run manola audio setup" in js
-    assert "uv run manola audio test --source meeting --duration 10" in js
+    # Mic/speaker pickers persist default_mic_index / default_speaker_index.
+    assert "function deviceSelect(id, devices, selectedIndex)" in js
+    assert "function bindDeviceSave()" in js
+    assert 't("saveDevices")' in js
+    assert "default_mic_index" in js
+    assert "default_speaker_index" in js
+    assert 'apiPost("/api/config", { default_mic_index: mic, default_speaker_index: spk })' in js
+    # Doctor stays a read-only CLI surface (out of Batch 3 scope).
     assert "function renderDoctor()" in js
     assert 't("rerunDoctor")' in js
     assert "uv run manola doctor" in js
-    assert "uv run manola audio doctor" in js
     assert "function commandPanel(title, commands)" in js
     assert ".command-panel" in css
+    assert ".control-group" in css
 
 
 def test_record_screen_is_complete_but_inert():
@@ -256,20 +268,30 @@ def test_reusable_job_component_wires_retranscribe():
     assert ".spinner" in css
 
 
-def test_enrich_and_disabled_action_flows_are_explicit():
+def test_batch3_actions_are_wired_through_the_job_api():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
 
-    assert "function disabledWorkflowPanel(m)" in js
-    assert 't("enrichMetadata")' in js
-    assert 't("exportMeeting")' in js
-    assert 'disabledAction(t("repairAudio"), "repairBackend")' in js
-    assert 'disabledAction(t("retranscribe"), "transcribeBackend")' in js
-    assert 'disabledAction(t("regenerateReport"), "reportBackend")' in js
-    assert "uv run manola enrich" in js
-    assert "uv run manola export" in js
-    assert "function backendGapDetail(area)" in js
-    assert "Export needs an async backend job endpoint" in js
-    assert "Metadata enrichment and apply/save need write endpoints" in js
+    # Shared helpers used by every Batch 3 action.
+    assert "function wireJobButton(btn, mount, action, params" in js
+    assert "function confirmRemoteLlm()" in js
+    assert 't("privacyConfirm")' in js
+
+    # Overview "Actions" panel replaces the old disabled CLI-fallback panel.
+    assert "function actionsPanel(m)" in js
+    assert "function bindActionsPanel(m)" in js
+    assert "function disabledWorkflowPanel(m)" not in js
+
+    # Regenerate report (#32) is a privacy-gated summarize job.
+    assert 'id="regenerateBtn"' in js
+    assert '"summarize"' in js
+    assert "needsConfirm: true" in js
+    # Repair (#37) is wired as a job.
+    assert 'id="repairBtn"' in js
+    assert '"repair"' in js
+    # Export (#34) with a share-policy picker.
+    assert 'id="exportPolicy"' in js
+    assert '"export"' in js
+    assert 't("policyReportTranscript")' in js
     assert "confidence: ${item.confidence}" in js
     assert "evidence: ${item.evidence}" in js
-    assert "Enrich with CLI" in js

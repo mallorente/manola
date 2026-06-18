@@ -12,11 +12,21 @@ import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .audio_recording import inspect_audio_devices
-from .config import CONFIG_PATH, SECRETS_PATH, AppConfig, load_config
+from .config import CONFIG_PATH, SECRETS_PATH, AppConfig, load_config, update_config_value
 from .doctor import collect_doctor_checks
+from .errors import ManolaError
+from .exporting import export_meeting
 from .jobs import JobRegistry, PrivacyConfirmationRequired, UnknownAction
-from .models import MeetingMetadata
-from .pipeline import iter_meetings, resolve_meeting, transcribe_meeting
+from .models import MeetingMetadata, SharePolicy, TranscriptionBackend
+from .pipeline import (
+    apply_metadata_suggestions,
+    enrich_meeting,
+    iter_meetings,
+    repair_meeting,
+    resolve_meeting,
+    summarize_meeting,
+    transcribe_meeting,
+)
 
 
 STATIC_DIR = Path(__file__).with_name("ui_static")
@@ -25,7 +35,7 @@ TRANSCRIPT_TIMESTAMP_RE = re.compile(r"^\[(?P<start>\d+(?:\.\d+)?)-(?P<end>\d+(?
 
 def run_ui_server(host: str = "127.0.0.1", port: int = 8765) -> None:
     config = load_config()
-    registry = build_job_registry(config)
+    registry = build_job_registry()
 
     class Handler(ManolaUiHandler):
         app_config = config
@@ -36,24 +46,120 @@ def run_ui_server(host: str = "127.0.0.1", port: int = 8765) -> None:
     server.serve_forever()
 
 
-def build_job_registry(config: AppConfig) -> JobRegistry:
-    """Build the UI job registry with the actions wired so far.
+def _require_meeting(params: dict[str, Any], config: AppConfig) -> Path:
+    meeting = params.get("meeting")
+    if not meeting:
+        raise ValueError("Missing 'meeting' parameter.")
+    return resolve_meeting(meeting, config)
 
-    Batch 2 wires the GPU-bound ``transcribe`` action (the retranscribe tracer
-    bullet). The registry generically enforces the remote-LLM privacy gate, so
-    Batch 3 actions (summarize/enrich/export/repair) only need to register a
-    handler here.
+
+def build_job_registry() -> JobRegistry:
+    """Build the UI job registry with every wired action.
+
+    Handlers re-read ``load_config()`` at run time so settings/device changes
+    made from the UI take effect on subsequent jobs. GPU-bound actions
+    (``transcribe``, ``repair``) are serialized behind one worker; remote-LLM
+    actions (``summarize``, ``enrich``) refuse to start without
+    ``confirm_remote_llm``.
     """
 
     def transcribe(params: dict[str, Any], report) -> dict[str, Any]:
-        meeting = params.get("meeting")
-        if not meeting:
-            raise ValueError("Missing 'meeting' parameter for transcribe job.")
-        meeting_dir = resolve_meeting(meeting, config)
+        config = load_config()
+        meeting_dir = _require_meeting(params, config)
         transcribe_meeting(meeting_dir, config, status=report, force=bool(params.get("force", True)))
         return {"meeting": str(meeting_dir)}
 
-    return JobRegistry({"transcribe": transcribe})
+    def summarize(params: dict[str, Any], report) -> dict[str, Any]:
+        config = load_config()
+        meeting_dir = _require_meeting(params, config)
+        summarize_meeting(meeting_dir, config, status=report, force=bool(params.get("force", True)))
+        return {"meeting": str(meeting_dir)}
+
+    def enrich(params: dict[str, Any], report) -> dict[str, Any]:
+        config = load_config()
+        meeting_dir = _require_meeting(params, config)
+        suggestions = enrich_meeting(meeting_dir, config, status=report, force=bool(params.get("force", True)))
+        return {"meeting": str(meeting_dir), "suggestions": str(suggestions)}
+
+    def export(params: dict[str, Any], report) -> dict[str, Any]:
+        config = load_config()
+        meeting_dir = _require_meeting(params, config)
+        policy = params.get("policy")
+        report(f"Exporting with share policy: {policy or 'meeting default'}...")
+        target = export_meeting(meeting_dir, config, SharePolicy(policy) if policy else None)
+        return {"export_path": str(target)}
+
+    def repair(params: dict[str, Any], report) -> dict[str, Any]:
+        config = load_config()
+        meeting_dir = _require_meeting(params, config)
+        repair_meeting(meeting_dir, config, status=report)
+        return {"meeting": str(meeting_dir)}
+
+    return JobRegistry(
+        {
+            "transcribe": transcribe,
+            "summarize": summarize,
+            "enrich": enrich,
+            "export": export,
+            "repair": repair,
+        },
+        gpu_actions=frozenset({"transcribe", "repair"}),
+    )
+
+
+# Whitelisted config fields the UI may write, with how to coerce the JSON value.
+# Secrets and LLM-profile internals are intentionally excluded.
+CONFIG_WRITE_FIELDS: dict[str, str] = {
+    "workspace_dir": "path",
+    "shared_dir": "path_optional",
+    "default_language": "str",
+    "default_llm_profile": "profile",
+    "default_transcription_backend": "backend",
+    "default_generate_llm_report": "bool",
+    "local_whisper_model": "str",
+    "local_whisper_device": "str",
+    "local_whisper_compute_type": "str",
+    "default_mic_index": "int_optional",
+    "default_speaker_index": "int_optional",
+}
+
+
+def coerce_config_value(field: str, value: Any) -> str | Path | bool | int | None:
+    """Validate and coerce a UI-supplied config value. Raises ValueError on bad input."""
+    kind = CONFIG_WRITE_FIELDS.get(field)
+    if kind is None:
+        raise ValueError(f"Field '{field}' is not writable from the UI.")
+    if kind == "path":
+        text = str(value).strip()
+        if not text:
+            raise ValueError(f"'{field}' cannot be empty.")
+        return Path(text).expanduser()
+    if kind == "path_optional":
+        text = str(value).strip() if value is not None else ""
+        return Path(text).expanduser() if text else None
+    if kind == "bool":
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    if kind == "int_optional":
+        if value is None or str(value).strip() == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"'{field}' must be an integer or empty.") from exc
+    if kind == "profile":
+        text = str(value).strip()
+        if text not in load_config().llm_profiles:
+            raise ValueError(f"Unknown LLM profile '{text}'.")
+        return text
+    if kind == "backend":
+        text = str(value).strip()
+        valid = {b.value for b in TranscriptionBackend}
+        if text not in valid:
+            raise ValueError(f"Transcription backend must be one of {sorted(valid)}.")
+        return text
+    return str(value)
 
 
 class ManolaUiHandler(BaseHTTPRequestHandler):
@@ -89,10 +195,45 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path.startswith("/api/jobs/"):
                 self._start_job(parsed.path.removeprefix("/api/jobs/").strip("/"))
+            elif parsed.path == "/api/config":
+                self._update_config()
+            elif parsed.path == "/api/meeting/apply":
+                self._apply_metadata()
             else:
                 self._send_error(404, "Not found")
         except Exception as exc:  # pragma: no cover - defensive HTTP boundary
             self._send_error(500, str(exc))
+
+    def _update_config(self) -> None:
+        body = self._read_json_body()
+        if not body:
+            self._send_error(400, "No config fields provided")
+            return
+        try:
+            coerced = {field: coerce_config_value(field, value) for field, value in body.items()}
+        except ValueError as exc:
+            self._send_error(400, str(exc))
+            return
+        for field, value in coerced.items():
+            update_config_value(field, value)
+        type(self).app_config = load_config()
+        self._send_json(public_config(self.app_config))
+
+    def _apply_metadata(self) -> None:
+        body = self._read_json_body()
+        meeting = body.get("meeting")
+        updates = body.get("updates")
+        if not meeting or not isinstance(updates, dict):
+            self._send_error(400, "Expected 'meeting' and an 'updates' object")
+            return
+        config = load_config()
+        try:
+            meeting_dir = resolve_meeting(meeting, config)
+            new_dir = apply_metadata_suggestions(meeting_dir, config, updates)
+        except (ManolaError, ValueError) as exc:
+            self._send_error(400, str(exc))
+            return
+        self._send_json(read_meeting(new_dir, config))
 
     def _start_job(self, action: str) -> None:
         if self.job_registry is None:
@@ -406,11 +547,7 @@ def backend_gaps() -> list[dict[str, str]]:
             "gap": "The CLI imports local paths. Browser upload or desktop file-picker handoff needs a backend endpoint before Import audio and Google Recorder import can process files.",
         },
         {
-            "area": "long-running jobs",
-            "gap": "Transcribe, summarize, enrich, export, and repair actions need async job tracking before the UI can safely run them.",
-        },
-        {
-            "area": "settings persistence",
-            "gap": "App language and highlight color are UI preferences stored in browser localStorage; they are not yet part of ~/.manola/config.toml.",
+            "area": "app preferences",
+            "gap": "App language and highlight color are UI preferences stored in browser localStorage; they are not part of ~/.manola/config.toml.",
         },
     ]

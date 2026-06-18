@@ -757,6 +757,13 @@ h2 {
   flex-wrap: wrap;
 }
 
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .job-status {
   display: inline-flex;
   align-items: center;

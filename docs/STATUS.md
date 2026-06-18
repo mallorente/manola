@@ -116,6 +116,49 @@ Batch 2 (Job-API keystone) implemented on 2026-06-18:
   meeting, confirm live progress + transcript refresh + clear failure surfacing)
   before flipping Batch 3 (#32–#37) to `ready-for-agent`.
 
+Batch 3 (Wire the remaining actions) implemented on 2026-06-18:
+
+- Issues #32–#37 (`docs/PRD-UI-Functional-Completion.md`, Batch 3). All reuse the
+  Batch 2 job API and the `runJob` frontend component.
+- #32 Regenerate report: Report tab + Overview "Actions" panel call
+  `POST /api/jobs/summarize` (force) through `wireJobButton` with a remote-LLM
+  privacy confirm; the report view refreshes on completion.
+- #37 Repair audio: new `pipeline.repair_meeting` re-normalizes from
+  `audio_original` (never overwritten) and re-transcribes; exposed as the
+  GPU-serialized `repair` job and wired on the Audio tab + Actions panel.
+- #33 Enrich + apply: `POST /api/jobs/enrich` (privacy-gated) generates
+  suggestions; new `pipeline.apply_metadata_suggestions` safely writes confirmed
+  fields to `metadata.json` (whitelist `title/project/attendees/meeting_type/
+  language/share_policy`), validates via pydantic, renames the folder via
+  `naming.py` when the canonical name changes (relative artifact paths stay
+  valid), and is exposed as `POST /api/meeting/apply`. Title apply prompts a
+  confirm (folder rename); raw `transcript.md` is never touched. Works
+  retroactively on already-titled meetings, unlike `apply_suggested_title`.
+- #34 Export: `POST /api/jobs/export` with a share-policy picker
+  (`report/report_transcript/all`) reusing `exporting.export_meeting` and its
+  path-safety checks.
+- #35 Editable settings: new `POST /api/config` writes a whitelist
+  (`CONFIG_WRITE_FIELDS`) via `config.update_config_value`; `coerce_config_value`
+  validates/coerces and rejects unknown fields and bad values with a clear 400.
+  Secrets have no write path. The Settings screen renders editable controls for
+  whitelisted fields; backend-only values stay read-only. After a write the
+  server reloads `app_config`, and job handlers read `load_config()` fresh so
+  changes take effect on subsequent jobs.
+- #36 Device selection: the Devices tab has mic/speaker pickers (1-based indices
+  from the probe, or system default) that persist `default_mic_index` /
+  `default_speaker_index` via `POST /api/config`.
+- Overview's old disabled "Unsupported UI actions" panel is replaced by a working
+  "Actions" panel (retranscribe/regenerate/enrich/repair + export). The
+  `long-running jobs` backend gap is removed; recording/import gaps remain
+  (Batch 4).
+- Verification: full suite **136 passed** (+11: repair/apply pipeline tests,
+  config-coercion + `/api/config` + `/api/meeting/apply` HTTP tests, registry
+  wiring, updated asset tests). Live smoke: `/api/jobs/summarize` 412 without
+  confirm / 202 with confirm, `/api/jobs/export` 202, `/api/config` 400 on
+  unknown field, `/api/meeting/apply` 400 without body.
+- Gate: tracking issue #55. Awaiting human check (see manual checklist) before
+  flipping Batch 4 (#38–#41) to `ready-for-agent`.
+
 Security hardening added on 2026-05-12:
 
 - Shared export rejects absolute or parent-traversal paths read from meeting metadata.

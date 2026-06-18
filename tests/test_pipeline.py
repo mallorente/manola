@@ -1,9 +1,121 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from manola.config import AppConfig
+from manola.errors import ManolaError
 from manola.models import MetadataSuggestions, MeetingType, ProcessOptions, TranscriptionBackend
-from manola.pipeline import apply_suggested_title, create_recorded_meeting, enrich_meeting, import_recording, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
+from manola.pipeline import apply_metadata_suggestions, apply_suggested_title, create_recorded_meeting, enrich_meeting, import_recording, process_recording, repair_meeting, resolve_meeting, summarize_meeting, transcribe_meeting
+
+
+def _write_meeting(workspace: Path, *, title: str = "Old Title", attendees=None) -> Path:
+    meeting_dir = workspace / "2026-06-18__general__old-title"
+    (meeting_dir / "audio").mkdir(parents=True)
+    metadata = {
+        "id": meeting_dir.name,
+        "title": title,
+        "created_at": "2026-06-18T10:00:00",
+        "meeting_type": "general",
+        "project": None,
+        "language": "en",
+        "attendees": attendees or ["Ada"],
+        "share_policy": "private",
+        "transcription_backend": "local",
+        "transcription_model": "large-v3",
+        "transcription_device": "cuda",
+        "transcription_compute_type": "float16",
+        "llm_profile": "deepseek_fast",
+        "audio_original": "audio/original.m4a",
+        "audio_normalized": "audio/normalized.wav",
+        "transcript": "transcript.md",
+        "report": "report.md",
+    }
+    (meeting_dir / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    (meeting_dir / "transcript.md").write_text("# Transcript\n[0.00-1.00] hi\n", encoding="utf-8")
+    (meeting_dir / "report.md").write_text("# Report\n", encoding="utf-8")
+    (meeting_dir / "audio" / "original.m4a").write_text("ORIGINAL", encoding="utf-8")
+    (meeting_dir / "audio" / "normalized.wav").write_text("truncated", encoding="utf-8")
+    return meeting_dir
+
+
+def test_repair_meeting_renormalizes_and_preserves_original(monkeypatch, tmp_path: Path) -> None:
+    workspace = tmp_path / "meetings"
+    workspace.mkdir()
+    meeting_dir = _write_meeting(workspace)
+
+    def fake_normalize(source: Path, target: Path) -> Path:
+        assert source.name == "original.m4a"
+        target.write_text("renormalized", encoding="utf-8")
+        return target
+
+    monkeypatch.setattr("manola.pipeline.normalize_audio", fake_normalize)
+    monkeypatch.setattr("manola.pipeline.transcribe_audio", lambda *a, **k: "repaired transcript")
+
+    repair_meeting(meeting_dir, AppConfig(workspace_dir=workspace))
+
+    assert (meeting_dir / "audio" / "original.m4a").read_text(encoding="utf-8") == "ORIGINAL"
+    assert (meeting_dir / "audio" / "normalized.wav").read_text(encoding="utf-8") == "renormalized"
+    assert "repaired transcript" in (meeting_dir / "transcript.md").read_text(encoding="utf-8")
+
+
+def test_repair_meeting_requires_source_audio(tmp_path: Path) -> None:
+    workspace = tmp_path / "meetings"
+    workspace.mkdir()
+    meeting_dir = _write_meeting(workspace)
+    (meeting_dir / "audio" / "original.m4a").unlink()
+
+    with pytest.raises(ManolaError):
+        repair_meeting(meeting_dir, AppConfig(workspace_dir=workspace))
+
+
+def test_apply_metadata_suggestions_retitles_and_renames_folder(tmp_path: Path) -> None:
+    workspace = tmp_path / "meetings"
+    workspace.mkdir()
+    meeting_dir = _write_meeting(workspace, title="Old Title")
+
+    new_dir = apply_metadata_suggestions(meeting_dir, AppConfig(workspace_dir=workspace), {"title": "Quarterly Planning"})
+
+    assert not meeting_dir.exists()
+    assert new_dir.exists()
+    metadata = json.loads((new_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["title"] == "Quarterly Planning"
+    assert metadata["id"] == new_dir.name
+    # Relative artifact paths stay valid after the rename.
+    assert (new_dir / "transcript.md").exists()
+    assert metadata["transcript"] == "transcript.md"
+
+
+def test_apply_metadata_suggestions_applies_attendees_without_rename_when_name_unchanged(tmp_path: Path) -> None:
+    workspace = tmp_path / "meetings"
+    workspace.mkdir()
+    meeting_dir = _write_meeting(workspace, title="Old Title")
+
+    new_dir = apply_metadata_suggestions(meeting_dir, AppConfig(workspace_dir=workspace), {"project": "Atlas"})
+
+    metadata = json.loads((new_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["project"] == "Atlas"
+
+
+def test_apply_metadata_suggestions_rejects_empty_title(tmp_path: Path) -> None:
+    workspace = tmp_path / "meetings"
+    workspace.mkdir()
+    meeting_dir = _write_meeting(workspace)
+
+    with pytest.raises(ManolaError):
+        apply_metadata_suggestions(meeting_dir, AppConfig(workspace_dir=workspace), {"title": "   "})
+
+
+def test_apply_metadata_suggestions_ignores_unknown_fields(tmp_path: Path) -> None:
+    workspace = tmp_path / "meetings"
+    workspace.mkdir()
+    meeting_dir = _write_meeting(workspace, title="Old Title")
+
+    new_dir = apply_metadata_suggestions(meeting_dir, AppConfig(workspace_dir=workspace), {"llm_profile": "evil", "report": "../escape.md"})
+
+    metadata = json.loads((new_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["llm_profile"] == "deepseek_fast"
+    assert metadata["report"] == "report.md"
 
 
 def fake_normalize(source_path: Path, target: Path) -> Path:
