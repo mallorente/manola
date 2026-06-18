@@ -8,6 +8,8 @@ const state = {
   lang: localStorage.getItem("manola.appLanguage") || "en",
   theme: localStorage.getItem("manola.theme") || "light",
   highlight: localStorage.getItem("manola.highlightColor") || "#3a6ae0",
+  sortKey: localStorage.getItem("manola.sortKey") || "date",
+  sortDir: localStorage.getItem("manola.sortDir") || "desc",
 };
 
 const I18N = {
@@ -27,6 +29,13 @@ const I18N = {
     searchMeetings: "Search meetings...",
     all: "All",
     ready: "Ready",
+    sortBy: "Sort by",
+    sortDate: "Date",
+    sortTitle: "Title",
+    sortType: "Type",
+    sortDuration: "Duration",
+    sortAsc: "Asc",
+    sortDesc: "Desc",
     overview: "Overview",
     transcript: "Transcript",
     report: "Report",
@@ -108,6 +117,13 @@ const I18N = {
     searchMeetings: "Buscar reuniones...",
     all: "Todas",
     ready: "Listas",
+    sortBy: "Ordenar por",
+    sortDate: "Fecha",
+    sortTitle: "Título",
+    sortType: "Tipo",
+    sortDuration: "Duración",
+    sortAsc: "Asc",
+    sortDesc: "Desc",
     overview: "Resumen",
     transcript: "Transcripción",
     report: "Informe",
@@ -290,8 +306,47 @@ function renderArchive() {
       renderArchive();
     });
   });
+  bindSortControls();
   drawMeetingList();
   renderDetail();
+}
+
+function bindSortControls() {
+  const sortSelect = document.getElementById("meetingSort");
+  if (sortSelect) {
+    sortSelect.value = state.sortKey;
+    sortSelect.addEventListener("change", () => {
+      state.sortKey = sortSelect.value;
+      localStorage.setItem("manola.sortKey", state.sortKey);
+      drawMeetingList();
+    });
+  }
+  const sortDirButton = document.getElementById("meetingSortDir");
+  if (sortDirButton) {
+    sortDirButton.textContent = sortDirLabel();
+    sortDirButton.addEventListener("click", () => {
+      state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+      localStorage.setItem("manola.sortDir", state.sortDir);
+      sortDirButton.textContent = sortDirLabel();
+      drawMeetingList();
+    });
+  }
+}
+
+function sortDirLabel() {
+  return state.sortDir === "asc" ? `↑ ${t("sortAsc")}` : `↓ ${t("sortDesc")}`;
+}
+
+function sortMeetings(meetings) {
+  const direction = state.sortDir === "asc" ? 1 : -1;
+  return [...meetings].sort((a, b) => compareMeetings(a, b, state.sortKey) * direction);
+}
+
+function compareMeetings(a, b, key) {
+  if (key === "title") return meetingTitle(a).localeCompare(meetingTitle(b), undefined, { sensitivity: "base" });
+  if (key === "type") return String(a.meeting_type || "").localeCompare(String(b.meeting_type || ""));
+  if (key === "duration") return (a.duration_seconds || 0) - (b.duration_seconds || 0);
+  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
 }
 
 function filteredMeetings() {
@@ -307,7 +362,7 @@ function filteredMeetings() {
 function drawMeetingList() {
   const list = document.getElementById("meetingList");
   if (!list) return;
-  const meetings = filteredMeetings();
+  const meetings = sortMeetings(filteredMeetings());
   if (!meetings.length) {
     list.innerHTML = `<div class="empty">${t("noMeetings")}</div>`;
     return;

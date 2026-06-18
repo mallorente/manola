@@ -68,6 +68,28 @@ def test_archive_has_fallback_title_and_clear_selected_row_style():
     assert "box-shadow: inset 3px 0 0 var(--accent), var(--shadow);" in css
 
 
+def test_archive_supports_selectable_sorting_persisted_in_localstorage():
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
+
+    assert 'id="meetingSort"' in html
+    assert 'id="meetingSortDir"' in html
+    for value in ('value="date"', 'value="title"', 'value="type"', 'value="duration"'):
+        assert value in html
+
+    assert 'localStorage.getItem("manola.sortKey")' in js
+    assert 'localStorage.getItem("manola.sortDir")' in js
+    assert 'localStorage.setItem("manola.sortKey", state.sortKey)' in js
+    assert 'localStorage.setItem("manola.sortDir", state.sortDir)' in js
+    assert "function sortMeetings(meetings)" in js
+    assert "function compareMeetings(a, b, key)" in js
+    assert "sortMeetings(filteredMeetings())" in js
+    # date grouping is still applied after sorting
+    assert "groupMeetingsByDay(meetings).forEach((group)" in js
+    assert ".sort-bar" in css
+
+
 def test_report_tab_renders_sections_and_backend_gap_states():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")

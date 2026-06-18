@@ -771,3 +771,75 @@ def test_audio_enhance_test_standalone_without_transcription(monkeypatch, tmp_pa
     assert result.exit_code == 0
     assert enhanced.read_text(encoding="utf-8") == "enhanced"
     assert f"Wrote enhanced audio: {enhanced}" in result.output
+
+
+
+def test_meet_applies_enrichment_suggested_title(monkeypatch, tmp_path: Path) -> None:
+    import json
+    from datetime import datetime
+
+    from manola.models import Language, MeetingMetadata, MeetingType, SharePolicy, TranscriptionBackend
+
+    workspace = tmp_path / "meetings"
+    created_at = datetime(2026, 5, 8, 10, 30)
+    meeting_dir = workspace / "2026-05-08__general__recording-10-30"
+    (meeting_dir / "audio").mkdir(parents=True)
+    metadata = MeetingMetadata(
+        id=meeting_dir.name,
+        title="Recording 10:30",
+        created_at=created_at,
+        meeting_type=MeetingType.general,
+        project=None,
+        language=Language.es,
+        attendees=[],
+        share_policy=SharePolicy.private,
+        transcription_backend=TranscriptionBackend.local,
+        llm_profile="deepseek_fast",
+        audio_original="audio/recorded.wav",
+        audio_normalized="audio/normalized.wav",
+        transcript="transcript.md",
+        report="report.md",
+    )
+    (meeting_dir / "metadata.json").write_text(
+        json.dumps(metadata.model_dump(mode="json")), encoding="utf-8"
+    )
+
+    class FakeRecording:
+        path = meeting_dir / "audio" / "recorded.wav"
+        duration_seconds = 10.0
+        rms = 0.1
+        sample_rate = 48000
+        silent = False
+        component_rms = {"mic": 0.1, "system": 0.2}
+
+    monkeypatch.setattr(
+        "manola.cli.inspect_audio_devices",
+        lambda: AudioDeviceReport(
+            default_microphone="Mic A",
+            default_speaker="Speaker A",
+            microphones=["Mic A"],
+            speakers=["Speaker A"],
+            loopbacks=["Speaker A Loopback"],
+        ),
+    )
+    monkeypatch.setattr("manola.cli.load_config", lambda: AppConfig(workspace_dir=workspace))
+    monkeypatch.setattr("manola.cli.create_recorded_meeting", lambda *args, **kwargs: (meeting_dir, FakeRecording()))
+    monkeypatch.setattr("manola.cli.transcribe_meeting", lambda *args, **kwargs: meeting_dir / "transcript.md")
+
+    def fake_enrich(md, config, **kwargs):
+        path = md / "metadata.suggestions.json"
+        path.write_text('{"suggested_title": "Budget Planning Sync"}', encoding="utf-8")
+        return path
+
+    monkeypatch.setattr("manola.cli.enrich_meeting", fake_enrich)
+    monkeypatch.setattr("manola.cli.summarize_meeting", lambda md, *args, **kwargs: md / "report.md")
+
+    result = runner.invoke(app, ["meet", "--duration", "10", "--language", "es"])
+
+    assert result.exit_code == 0
+    renamed = workspace / "2026-05-08__general__budget-planning-sync"
+    assert renamed.exists()
+    assert not meeting_dir.exists()
+    assert "Renamed meeting" in result.output
+    reloaded = json.loads((renamed / "metadata.json").read_text(encoding="utf-8"))
+    assert reloaded["title"] == "Budget Planning Sync"

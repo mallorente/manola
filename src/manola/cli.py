@@ -15,9 +15,9 @@ from .audio import copy_original, enhance_voice, normalize_audio
 from .audio_recording import inspect_audio_devices, record_audio_test, record_wav
 from .exporting import export_meeting
 from .models_store import FASTER_WHISPER_REPOS, download_faster_whisper_model, list_downloaded_models
-from .models import Language, MeetingType, ProcessOptions, SharePolicy, TranscriptionBackend
-from .naming import meeting_folder_name, proposed_archive_parent
-from .pipeline import create_recorded_meeting, enrich_meeting, import_recording, iter_meetings, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
+from .models import Language, MeetingType, MetadataSuggestions, ProcessOptions, SharePolicy, TranscriptionBackend
+from .naming import generic_recording_title, meeting_folder_name, proposed_archive_parent
+from .pipeline import apply_suggested_title, create_recorded_meeting, enrich_meeting, import_recording, iter_meetings, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
 from .prompts import iter_prompt_status, load_prompt_template
 from .transcription import transcribe_audio
 from .ui_server import run_ui_server
@@ -774,7 +774,7 @@ def meet(
             else (None if speaker or auto_speaker else config.default_speaker_index)
         )
         created_at = datetime.now()
-        resolved_title = title or f"Recording {created_at:%H:%M}"
+        resolved_title = title or generic_recording_title(created_at)
         expected_meeting_dir = (
             proposed_archive_parent(config.workspace_dir, project, meeting_type)
             / meeting_folder_name(
@@ -869,6 +869,14 @@ def meet(
             _status("Generating metadata suggestions...")
             suggestions_path = enrich_meeting(meeting_dir, config, status=_status)
             typer.echo(f"Wrote suggestions: {suggestions_path}")
+            if suggestions_path.exists():
+                suggestions = MetadataSuggestions.model_validate_json(
+                    suggestions_path.read_text(encoding="utf-8")
+                )
+                retitled_dir = apply_suggested_title(meeting_dir, config, suggestions, status=_status)
+                if retitled_dir != meeting_dir:
+                    meeting_dir = retitled_dir
+                    typer.echo(f"Renamed meeting: {meeting_dir}")
         if effective_llm:
             _status("Generating meeting report...")
             report_path = summarize_meeting(meeting_dir, config, status=_status)

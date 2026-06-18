@@ -54,6 +54,37 @@ Roadmap planning published on 2026-06-18:
   - Only Batch 1 (#26–#29) carries `ready-for-agent`; later batches stay `needs-triage` until each gate opens. Tracking issues carry `ready-for-human`.
 - Gate workflow: run a batch → human check on its tracking issue → flip the next milestone's issues to `ready-for-agent`.
 
+Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
+
+- Issues #26–#29 (`docs/PRD-UI-Functional-Completion.md`, Batch 1). Frontend-only
+  except #29. No backend job API yet (that is Batch 2).
+- #26 Dark-mode audit: in `[data-theme="dark"]` the status colors `--good`,
+  `--warn`, `--bad` were only overridden for their backgrounds, so badge text
+  (status badges in archive rows, overview, audio, report, transcript, devices,
+  doctor) rendered dark-on-dark. Added legible dark foregrounds
+  (`#6cc08a`/`#e0b061`/`#e08a7f`), brightened the dimmest secondary text
+  (`--text-3` → `#837e74`) so timestamps/labels read clearly, and gave dark mode
+  a visible `--shadow` for panel separation.
+- #27 Settings gear: replaced the asymmetric hand-drawn gear path with a
+  symmetric (Lucide-style) gear so the `cx=12 cy=12 r=3` center circle is
+  concentric at the nav icon size.
+- #28 Selectable sorting: added a sort control to the archive list (date, title,
+  type, duration; ascending/descending). The choice persists in `localStorage`
+  (`manola.sortKey` / `manola.sortDir`). Meetings are sorted before day grouping,
+  so `groupMeetingsByDay` still renders correct day headers under every sort.
+- #29 Meaningful titles: `meet` now applies a high-confidence enrichment
+  `suggested_title` as the meeting title and folder topic via the new
+  `pipeline.apply_suggested_title`. It only acts when the meeting still carries
+  the generic `Recording HH:MM` fallback (the enrich prompt nulls the title when
+  evidence is weak), renames the folder through `naming.meeting_folder_name`, and
+  rewrites `metadata.json`. No extra LLM call. Retroactive re-titling of existing
+  meetings stays out of scope (Batch 3).
+- Verification: full suite `115 passed` (110 + 5 new pipeline/CLI/UI-asset
+  tests); `uv run manola ui --host 127.0.0.1 --port 8765` serves index, static
+  assets, and `/api/state` with `200`.
+- Gate: tracking issue #53. Awaiting human dark-mode eyeball pass before flipping
+  Batch 2 (#30–#31) to `ready-for-agent`.
+
 Security hardening added on 2026-05-12:
 
 - Shared export rejects absolute or parent-traversal paths read from meeting metadata.

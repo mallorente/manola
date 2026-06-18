@@ -37,8 +37,8 @@
         <rect x="4" y="4" width="16" height="16" rx="4"></rect>
       </symbol>
       <symbol id="icon-settings" viewBox="0 0 24 24">
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"></path>
         <circle cx="12" cy="12" r="3"></circle>
-        <path d="M19.4 15a8 8 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-1.7-1l-.3-2.6h-4l-.3 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a8 8 0 0 0 .1 2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5Z"></path>
       </symbol>
       <symbol id="icon-theme" viewBox="0 0 24 24">
         <path d="M12 3v2"></path>
@@ -129,6 +129,16 @@
             <button class="chip active" data-filter="all" type="button" data-i18n="all">All</button>
             <button class="chip" data-filter="attention" type="button" data-i18n="needsAttention">Needs attention</button>
             <button class="chip" data-filter="ready" type="button" data-i18n="ready">Ready</button>
+          </div>
+          <div class="sort-bar">
+            <label class="sort-label" for="meetingSort" data-i18n="sortBy">Sort by</label>
+            <select id="meetingSort" class="sort-select">
+              <option value="date" data-i18n="sortDate">Date</option>
+              <option value="title" data-i18n="sortTitle">Title</option>
+              <option value="type" data-i18n="sortType">Type</option>
+              <option value="duration" data-i18n="sortDuration">Duration</option>
+            </select>
+            <button id="meetingSortDir" class="secondary-button small" type="button"></button>
           </div>
           <div id="meetingList" class="meeting-list"></div>
         </div>

@@ -10,8 +10,14 @@ from .audio_recording import AudioTestResult, record_meeting_until_stopped, reco
 from .config import AppConfig
 from .errors import ManolaError
 from .live_transcription import LiveTranscriptSession
-from .models import MeetingMetadata, ProcessOptions
-from .naming import meeting_folder_name, proposed_archive_parent
+from .models import MeetingMetadata, MetadataSuggestions, ProcessOptions
+from .naming import (
+    generic_recording_title,
+    is_generic_recording_title,
+    meeting_folder_name,
+    proposed_archive_parent,
+    slugify,
+)
 from .reporting import fallback_report, generate_metadata_suggestions, generate_report
 from .status import StatusCallback, noop_status
 from .transcription import transcribe_audio
@@ -99,7 +105,7 @@ def create_recorded_meeting(
     status: StatusCallback = noop_status,
 ) -> tuple[Path, AudioTestResult]:
     created_at = created_at or datetime.now()
-    title = options.title or f"Recording {created_at:%H:%M}"
+    title = options.title or generic_recording_title(created_at)
     meeting_dir = (
         proposed_archive_parent(config.workspace_dir, options.project, options.meeting_type)
         / meeting_folder_name(
@@ -401,6 +407,55 @@ def enrich_meeting(
         encoding="utf-8",
     )
     return suggestions_path
+
+
+def apply_suggested_title(
+    meeting_dir: Path,
+    config: AppConfig,
+    suggestions: MetadataSuggestions,
+    status: StatusCallback = noop_status,
+) -> Path:
+    """Re-title a freshly created meeting from a high-confidence enrichment title.
+
+    Only acts when the meeting still carries the generic ``Recording HH:MM``
+    fallback title and enrichment produced a usable ``suggested_title``. The
+    enrichment prompt is told to null out the title when evidence is weak, so a
+    present, non-empty title is treated as high-confidence. Renames the meeting
+    folder via :func:`meeting_folder_name` and rewrites ``metadata.json``.
+    Returns the (possibly unchanged) meeting directory. This is the only
+    re-title path; retroactive re-titling of existing meetings is out of scope.
+    """
+    suggested = (suggestions.suggested_title or "").strip()
+    if not suggested:
+        return meeting_dir
+
+    metadata_path = meeting_dir / "metadata.json"
+    metadata = MeetingMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+    if not is_generic_recording_title(metadata.title):
+        return meeting_dir
+    if not slugify(suggested, ""):
+        return meeting_dir
+
+    parent = proposed_archive_parent(config.workspace_dir, metadata.project, metadata.meeting_type)
+    target_dir = parent / meeting_folder_name(
+        created_at=metadata.created_at,
+        meeting_type=metadata.meeting_type,
+        title=suggested,
+        attendees=metadata.attendees,
+    )
+    new_dir = meeting_dir
+    if target_dir != meeting_dir and not target_dir.exists():
+        status(f"Renaming meeting folder to {target_dir.name}...")
+        meeting_dir.rename(target_dir)
+        new_dir = target_dir
+
+    metadata = metadata.model_copy(update={"title": suggested, "id": new_dir.name})
+    (new_dir / "metadata.json").write_text(
+        json.dumps(metadata.model_dump(mode="json"), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    status(f"Applied enrichment title: {suggested}")
+    return new_dir
 
 
 def _transcript_document(metadata: MeetingMetadata, transcript: str) -> str:
