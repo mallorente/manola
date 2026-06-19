@@ -85,6 +85,37 @@ Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
 - Gate: tracking issue #53. Awaiting human dark-mode eyeball pass before flipping
   Batch 2 (#30–#31) to `ready-for-agent`.
 
+Batch 2 (Job-API keystone) implemented on 2026-06-18:
+
+- Issues #30–#31 (`docs/PRD-UI-Functional-Completion.md`, Batch 2;
+  `docs/ADR-0003-ui-job-model.md`).
+- #30 Job model: new `src/manola/jobs.py` with a thread-safe `JobRegistry`
+  (`job_id -> Job{action,status,progress,step,result,error,created_at}`, status
+  `queued/running/done/failed`). A single serialized worker runs GPU-bound
+  actions (`transcribe`) so concurrent CUDA runs cannot contend for VRAM;
+  lightweight actions run on their own threads. Remote-LLM actions
+  (`summarize`/`enrich`/`regenerate`) refuse to start without a
+  `confirm_remote_llm` flag (`PrivacyConfirmationRequired`). `ui_server.py` gains
+  `POST /api/jobs/<action>` (202 + job record; 412 on the privacy gate, 404 on
+  unknown action) and `GET /api/jobs/<id>`, wired through `build_job_registry`.
+  CUDA transcription keeps using the existing subprocess worker; the job thread
+  waits on it.
+- #31 Retranscribe tracer bullet: the Transcript tab's Retranscribe button is now
+  live, calling `POST /api/jobs/transcribe` (force) through a reusable frontend
+  job component (`runJob`/`pollJob`/`renderJobStatus` in `app.js`, ~1s polling
+  with running/progress/done/failed states and a spinner). On completion
+  `refreshMeeting` re-fetches the single meeting and re-renders in place. Batch 3
+  actions reuse `runJob` (pass `confirmRemoteLlm: true` for remote-LLM actions).
+  The Overview workflow panel's disabled CLI-reference buttons are intentionally
+  left until Batch 3/4 closes them.
+- Verification: full suite `125 passed` (+10: registry state machine/queue/privacy
+  unit tests, HTTP endpoint + privacy-gate + unknown-action tests, job-component
+  asset test). `uv run manola ui --host 127.0.0.1 --port 8766` serves `/api/state`
+  `200` and `POST /api/jobs/transcribe` returns `202` with a queued job record.
+- Gate: tracking issue #54. Awaiting human check (click Retranscribe on a real
+  meeting, confirm live progress + transcript refresh + clear failure surfacing)
+  before flipping Batch 3 (#32–#37) to `ready-for-agent`.
+
 Security hardening added on 2026-05-12:
 
 - Shared export rejects absolute or parent-traversal paths read from meeting metadata.

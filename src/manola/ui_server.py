@@ -14,8 +14,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .audio_recording import inspect_audio_devices
 from .config import CONFIG_PATH, SECRETS_PATH, AppConfig, load_config
 from .doctor import collect_doctor_checks
+from .jobs import JobRegistry, PrivacyConfirmationRequired, UnknownAction
 from .models import MeetingMetadata
-from .pipeline import iter_meetings
+from .pipeline import iter_meetings, resolve_meeting, transcribe_meeting
 
 
 STATIC_DIR = Path(__file__).with_name("ui_static")
@@ -24,17 +25,40 @@ TRANSCRIPT_TIMESTAMP_RE = re.compile(r"^\[(?P<start>\d+(?:\.\d+)?)-(?P<end>\d+(?
 
 def run_ui_server(host: str = "127.0.0.1", port: int = 8765) -> None:
     config = load_config()
+    registry = build_job_registry(config)
 
     class Handler(ManolaUiHandler):
         app_config = config
+        job_registry = registry
 
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Manola UI: http://{host}:{port}")
     server.serve_forever()
 
 
+def build_job_registry(config: AppConfig) -> JobRegistry:
+    """Build the UI job registry with the actions wired so far.
+
+    Batch 2 wires the GPU-bound ``transcribe`` action (the retranscribe tracer
+    bullet). The registry generically enforces the remote-LLM privacy gate, so
+    Batch 3 actions (summarize/enrich/export/repair) only need to register a
+    handler here.
+    """
+
+    def transcribe(params: dict[str, Any], report) -> dict[str, Any]:
+        meeting = params.get("meeting")
+        if not meeting:
+            raise ValueError("Missing 'meeting' parameter for transcribe job.")
+        meeting_dir = resolve_meeting(meeting, config)
+        transcribe_meeting(meeting_dir, config, status=report, force=bool(params.get("force", True)))
+        return {"meeting": str(meeting_dir)}
+
+    return JobRegistry({"transcribe": transcribe})
+
+
 class ManolaUiHandler(BaseHTTPRequestHandler):
     app_config: AppConfig
+    job_registry: JobRegistry | None = None
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -53,10 +77,58 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
                     self._send_error(400, "Missing path")
                     return
                 self._send_json(read_meeting(Path(unquote(path)), self.app_config))
+            elif parsed.path.startswith("/api/jobs/"):
+                self._send_job(parsed.path.removeprefix("/api/jobs/").strip("/"))
             else:
                 self._send_error(404, "Not found")
         except Exception as exc:  # pragma: no cover - defensive HTTP boundary
             self._send_error(500, str(exc))
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        try:
+            if parsed.path.startswith("/api/jobs/"):
+                self._start_job(parsed.path.removeprefix("/api/jobs/").strip("/"))
+            else:
+                self._send_error(404, "Not found")
+        except Exception as exc:  # pragma: no cover - defensive HTTP boundary
+            self._send_error(500, str(exc))
+
+    def _start_job(self, action: str) -> None:
+        if self.job_registry is None:
+            self._send_error(503, "Job registry unavailable")
+            return
+        body = self._read_json_body()
+        confirm = bool(body.pop("confirm_remote_llm", False))
+        try:
+            job = self.job_registry.submit(action, body, confirm_remote_llm=confirm)
+        except UnknownAction:
+            self._send_error(404, f"Unknown job action: {action}")
+            return
+        except PrivacyConfirmationRequired as exc:
+            self._send_error(412, str(exc))
+            return
+        self._send_json(job.to_dict(), status=202)
+
+    def _send_job(self, job_id: str) -> None:
+        if self.job_registry is None:
+            self._send_error(503, "Job registry unavailable")
+            return
+        job = self.job_registry.get(job_id)
+        if job is None:
+            self._send_error(404, "Job not found")
+            return
+        self._send_json(job.to_dict())
+
+    def _read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        if not raw.strip():
+            return {}
+        parsed = json.loads(raw.decode("utf-8"))
+        return parsed if isinstance(parsed, dict) else {}
 
     def log_message(self, format: str, *args: object) -> None:
         return
@@ -82,9 +154,9 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _send_json(self, value: Any) -> None:
+    def _send_json(self, value: Any, status: int = 200) -> None:
         content = json.dumps(value, ensure_ascii=False, indent=2, default=str).encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()

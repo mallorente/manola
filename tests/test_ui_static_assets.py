@@ -236,6 +236,26 @@ def test_import_screen_is_complete_but_inert():
     assert "uv run manola process <audio-path> --language es --share all" in js
 
 
+def test_reusable_job_component_wires_retranscribe():
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
+
+    # The reusable async-job component (ADR-0003) Batch 3 actions will reuse.
+    assert "async function runJob(action, params, mount" in js
+    assert "async function pollJob(jobId, mount, onDone)" in js
+    assert "function renderJobStatus(mount, job)" in js
+    assert "body.confirm_remote_llm = true" in js
+    assert "async function refreshMeeting(path)" in js
+
+    # Retranscribe is wired end-to-end through the job API (tracer bullet).
+    assert "function bindRetranscribe(m)" in js
+    assert 'runJob("transcribe", { meeting: m.path, force: true }' in js
+    assert 'id="retranscribeBtn"' in js
+    assert 'id="retranscribeJob"' in js
+    assert ".job-status" in css
+    assert ".spinner" in css
+
+
 def test_enrich_and_disabled_action_flows_are_explicit():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
