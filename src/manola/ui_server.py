@@ -6,6 +6,7 @@ import json
 import mimetypes
 from pathlib import Path
 import re
+import sys
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 import wave
@@ -33,8 +34,25 @@ STATIC_DIR = Path(__file__).with_name("ui_static")
 TRANSCRIPT_TIMESTAMP_RE = re.compile(r"^\[(?P<start>\d+(?:\.\d+)?)-(?P<end>\d+(?:\.\d+)?)\]")
 
 
+def _warm_up_audio_com() -> None:
+    """Import soundcard on the main thread so its module-level COM init runs here.
+
+    soundcard initializes COM once, at import. If that first import happens on an
+    HTTP worker thread it conflicts with the per-thread COM init we do for device
+    enumeration (it sees S_FALSE and aborts with 0x100000001). Importing it on the
+    main thread first means worker threads only join the existing MTA apartment.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import soundcard  # noqa: F401
+    except Exception:
+        pass
+
+
 def run_ui_server(host: str = "127.0.0.1", port: int = 8765) -> None:
     config = load_config()
+    _warm_up_audio_com()
     registry = build_job_registry()
 
     class Handler(ManolaUiHandler):
@@ -365,7 +383,35 @@ def safe_doctor_checks(config: AppConfig) -> list[dict[str, str]]:
         return [{"name": "doctor", "status": "warn", "detail": str(exc)}]
 
 
+def _ensure_thread_com() -> bool:
+    """Initialize COM on the calling thread for soundcard's Media Foundation backend.
+
+    soundcard initializes COM only once, on its import thread. The UI's
+    ``ThreadingHTTPServer`` handles each request on a fresh worker thread, where
+    COM is uninitialized, so device enumeration fails with CO_E_NOTINITIALIZED
+    (0x800401f0). Initialize COM in MTA mode (matching soundcard) for this thread;
+    return whether we took a reference that the caller must release.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+
+    COINIT_MULTITHREADED = 0x0
+    hr = ctypes.windll.ole32.CoInitializeEx(None, COINIT_MULTITHREADED)
+    # S_OK (0) or S_FALSE (1): we hold a reference and must uninitialize.
+    # Any error (e.g. RPC_E_CHANGED_MODE) means we did not, so leave it alone.
+    return hr in (0, 1)
+
+
+def _release_thread_com() -> None:
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.ole32.CoUninitialize()
+
+
 def safe_devices() -> dict[str, Any]:
+    com_initialized = _ensure_thread_com()
     try:
         report = inspect_audio_devices()
         return {
@@ -378,6 +424,9 @@ def safe_devices() -> dict[str, Any]:
         }
     except Exception as exc:
         return {"error": str(exc)}
+    finally:
+        if com_initialized:
+            _release_thread_com()
 
 
 def read_meeting(meeting_dir: Path, config: AppConfig) -> dict[str, Any]:
