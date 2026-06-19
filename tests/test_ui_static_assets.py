@@ -211,24 +211,23 @@ def test_devices_tab_selects_and_saves_capture_devices():
     assert ".control-group" in css
 
 
-def test_record_screen_is_complete_but_inert():
+def test_record_screen_starts_and_stops_recording():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
-    css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
 
     assert "function renderRecord()" in js
-    assert "Meeting defaults" in js
-    assert "Capture defaults" in js
-    assert "config.default_language" in js
-    assert "config.default_mic_index" in js
-    assert "config.default_speaker_index" in js
-    assert 't("liveTranscript")' in js
+    assert "function bindRecord()" in js
+    # Start/stop drive the recording job + stop endpoint.
+    assert 'apiPost("/api/jobs/record"' in js
+    assert 'apiPost("/api/recording/stop", { job_id: state.recordingJobId })' in js
     assert 't("startRecording")' in js
     assert 't("stopRecording")' in js
-    assert 't("processRecording")' in js
-    assert "recording job API plus live level/transcript events" in js
-    assert "uv run manola meet --language en" in js
-    assert ".static-meter" in css
-    assert ".meter-row" in css
+    assert 'id="recStartBtn"' in js
+    assert 'id="recStopBtn"' in js
+    assert "state.recordingJobId" in js
+    assert "MEETING_TYPES" in js
+    assert "config.default_mic_index" in js
+    # On completion the new meeting is refreshed and selected.
+    assert "state.selectedPath = result.meeting" in js
 
 
 def test_import_screen_is_complete_but_inert():

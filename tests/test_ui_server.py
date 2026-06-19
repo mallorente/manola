@@ -231,7 +231,7 @@ def _post_path(base, path, payload):
 def test_build_job_registry_wires_batch_3_actions():
     registry = build_job_registry()
     try:
-        assert set(registry._handlers) == {"transcribe", "summarize", "enrich", "export", "repair"}
+        assert {"transcribe", "summarize", "enrich", "export", "repair"} <= set(registry._handlers)
         assert registry._gpu_actions == frozenset({"transcribe", "repair"})
         # summarize + enrich must be gated by the remote-LLM privacy flag.
         assert {"summarize", "enrich"} <= registry._remote_llm_actions
@@ -291,6 +291,48 @@ def test_config_endpoint_rejects_non_whitelisted_field(monkeypatch):
         assert calls == []  # nothing was written
     finally:
         server.shutdown()
+        registry.close()
+
+
+def test_recording_stop_endpoint_signals_job():
+    started = threading.Event()
+
+    def record_handler(params, report):
+        started.set()
+        params["_stop_event"].wait(timeout=5)
+        return {"meeting": "done"}
+
+    registry = JobRegistry({"record": record_handler})
+    server, base = _serving_handler(registry)
+    try:
+        status, job = _post(base, "record", {})
+        assert status == 202
+        assert started.wait(2)
+
+        s2, body = _post_path(base, "/api/recording/stop", {"job_id": job["id"]})
+        assert s2 == 200
+        assert body["stopped"] is True
+
+        rec = registry.wait(job["id"], timeout=5)
+        assert rec is not None and rec.status == "done"
+
+        try:
+            _post_path(base, "/api/recording/stop", {"job_id": "nope"})
+            raise AssertionError("expected HTTP 404")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+    finally:
+        server.shutdown()
+        registry.close()
+
+
+def test_build_job_registry_includes_record_action():
+    registry = build_job_registry()
+    try:
+        assert "record" in registry._handlers
+        assert "record" not in registry._gpu_actions
+        assert "record" not in registry._remote_llm_actions
+    finally:
         registry.close()
 
 

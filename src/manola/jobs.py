@@ -79,6 +79,7 @@ class JobRegistry:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
         self._events: dict[str, threading.Event] = {}
+        self._stops: dict[str, threading.Event] = {}
         self._gpu_queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
         self._gpu_worker = threading.Thread(
             target=self._gpu_loop, name="manola-gpu-jobs", daemon=True
@@ -107,6 +108,7 @@ class JobRegistry:
         with self._lock:
             self._jobs[job.id] = job
             self._events[job.id] = done
+            self._stops[job.id] = threading.Event()
 
         if action in self._gpu_actions:
             self._gpu_queue.put((job.id, params or {}))
@@ -119,6 +121,19 @@ class JobRegistry:
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def request_stop(self, job_id: str) -> bool:
+        """Signal a cooperatively-stoppable job (e.g. recording) to stop.
+
+        Returns whether the job exists. The handler receives the stop event via
+        ``params['_stop_event']`` and is responsible for honoring it.
+        """
+        with self._lock:
+            stop = self._stops.get(job_id)
+            exists = job_id in self._jobs
+        if stop is not None:
+            stop.set()
+        return exists
 
     def all(self) -> list[Job]:
         with self._lock:
@@ -149,9 +164,13 @@ class JobRegistry:
         def report(message: str) -> None:
             self._update(job_id, step=message)
 
+        with self._lock:
+            stop_event = self._stops.get(job_id)
+        run_params = {**params, "_stop_event": stop_event}
+
         self._update(job_id, status="running")
         try:
-            result = handler(params, report)
+            result = handler(run_params, report)
             self._update(job_id, status="done", result=result, step="Done")
         except Exception as exc:  # surface failure honestly
             self._update(job_id, status="failed", error=str(exc))

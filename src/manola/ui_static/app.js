@@ -10,7 +10,16 @@ const state = {
   highlight: localStorage.getItem("manola.highlightColor") || "#3a6ae0",
   sortKey: localStorage.getItem("manola.sortKey") || "date",
   sortDir: localStorage.getItem("manola.sortDir") || "desc",
+  recordingJobId: null,
 };
+
+const MEETING_TYPES = [
+  "general", "sales_discovery", "sales_demo", "customer_success", "client_update",
+  "internal_sync", "one_on_one", "job_interview", "case_interview", "project_review",
+  "incident_postmortem", "brainstorm", "strategy", "workshop", "refinement",
+  "daily", "retro", "planning",
+];
+const SHARE_POLICIES = ["private", "report", "report_transcript", "all"];
 
 const I18N = {
   en: {
@@ -94,6 +103,9 @@ const I18N = {
     speakerLoopback: "Speaker / loopback",
     systemDefault: "System default",
     notConfigured: "Not configured",
+    recordSub: "Record a meeting from the browser. Capture starts on the server.",
+    recordLiveLater: "Live level meters and live transcript arrive in a later step.",
+    recordReportNote: "Stopping saves the meeting and transcribes it. Generate the report from the meeting afterwards.",
     lowConfidenceConfirm: "This suggestion looks low confidence. Apply anyway?",
     noReport: "No report generated yet.",
     noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
@@ -205,6 +217,9 @@ const I18N = {
     speakerLoopback: "Altavoz / loopback",
     systemDefault: "Predeterminado del sistema",
     notConfigured: "Sin configurar",
+    recordSub: "Graba una reunión desde el navegador. La captura ocurre en el servidor.",
+    recordLiveLater: "Los medidores de nivel y la transcripción en vivo llegan en un paso posterior.",
+    recordReportNote: "Al detener se guarda la reunión y se transcribe. Genera el informe desde la reunión después.",
     lowConfidenceConfirm: "Esta sugerencia parece de baja confianza. ¿Aplicar de todos modos?",
     noReport: "Aun no hay informe generado.",
     noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
@@ -1085,40 +1100,81 @@ function renderImport() {
 
 function renderRecord() {
   const config = state.data.config;
-  renderSimple(t("recordMeeting"), "Desktop-class recording flow is designed, but not wired in v1.", () => `
-    <div class="panel warn report-context">
-      <div>
-        <strong>${t("backendGap")}</strong>
-        <p class="muted">Recording from the browser needs a controllable recording job API plus live level/transcript events.</p>
-      </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("startRecording")}</button>
-    </div>
+  const recording = !!state.recordingJobId;
+  const micLabel = config.default_mic_index ?? t("systemDefault");
+  const spkLabel = config.default_speaker_index ?? t("systemDefault");
+  renderSimple(t("recordMeeting"), t("recordSub"), () => `
     <div class="grid-2">
       <div class="panel">
-        <h2>Meeting defaults</h2>
-        <div class="setting-row"><span>Title</span><div class="control readonly-value" aria-readonly="true">New meeting</div></div>
-        <div class="setting-row"><span>Language</span><div class="control readonly-value" aria-readonly="true">${escapeHtml(config.default_language || "auto")}</div></div>
-        <div class="setting-row"><span>LLM profile</span><div class="control readonly-value" aria-readonly="true">${escapeHtml(config.default_llm_profile || "unknown")}</div></div>
-        <div class="setting-row"><span>Share policy</span><div class="control readonly-value" aria-readonly="true">private</div></div>
+        <h2>Meeting</h2>
+        <div class="setting-row"><span>Title</span><input id="recTitle" class="control" type="text" placeholder="New meeting" ${recording ? "disabled" : ""} /></div>
+        <div class="setting-row"><span>${t("transcriptLanguage")}</span><input id="recLanguage" class="control" type="text" value="${escapeHtml(config.default_language || "auto")}" ${recording ? "disabled" : ""} /></div>
+        <div class="setting-row"><span>Type</span><select id="recType" class="control sort-select" ${recording ? "disabled" : ""}>${MEETING_TYPES.map((tp) => `<option value="${tp}">${escapeHtml(tp)}</option>`).join("")}</select></div>
+        <div class="setting-row"><span>${t("sharePolicy")}</span><select id="recShare" class="control sort-select" ${recording ? "disabled" : ""}>${SHARE_POLICIES.map((p) => `<option value="${p}">${escapeHtml(p)}</option>`).join("")}</select></div>
       </div>
       <div class="panel">
-        <h2>Capture defaults</h2>
-        <div class="setting-row"><span>Microphone</span><strong>${escapeHtml(config.default_mic_index ?? "system default")}</strong></div>
-        <div class="setting-row"><span>Speaker loopback</span><strong>${escapeHtml(config.default_speaker_index ?? "auto probe")}</strong></div>
-        <div class="meter-row"><span>MIC</span><div class="static-meter"><span style="width:42%"></span></div></div>
-        <div class="meter-row"><span>SYS</span><div class="static-meter"><span style="width:36%"></span></div></div>
+        <h2>Capture</h2>
+        <div class="setting-row"><span>${t("microphone")}</span><strong>${escapeHtml(String(micLabel))}</strong></div>
+        <div class="setting-row"><span>${t("speakerLoopback")}</span><strong>${escapeHtml(String(spkLabel))}</strong></div>
+        <p class="setting-sub">${t("recordLiveLater")}</p>
       </div>
     </div>
     <div class="panel">
-      <h2>${t("liveTranscript")}</h2>
-      <div class="transcript-line placeholder"><div class="timestamp">00:00</div><div>Preview chunks will appear here after the UI has a live event stream.</div></div>
-      <div class="metadata-actions">
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("startRecording")}</button>
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("stopRecording")}</button>
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("processRecording")}</button>
+      <h2>${t("recordMeeting")}</h2>
+      <p class="setting-sub">${t("recordReportNote")}</p>
+      <div class="action-with-status">
+        <button class="secondary-button" id="recStartBtn" type="button" ${recording ? "disabled" : ""}>${t("startRecording")}</button>
+        <button class="secondary-button" id="recStopBtn" type="button" ${recording ? "" : "disabled"}>${t("stopRecording")}</button>
+        <span class="job-mount" id="recStatus"></span>
       </div>
-    </div>
-    ${commandPanel("Record with CLI", ["uv run manola meet --language en", "uv run manola meet --language es", "uv run manola record --source meeting --process --language en"])}`);
+    </div>`);
+  bindRecord();
+}
+
+function bindRecord() {
+  const startBtn = document.getElementById("recStartBtn");
+  const stopBtn = document.getElementById("recStopBtn");
+  const mount = document.getElementById("recStatus");
+  if (startBtn) {
+    startBtn.addEventListener("click", async () => {
+      const params = {
+        title: document.getElementById("recTitle").value || undefined,
+        language: document.getElementById("recLanguage").value || undefined,
+        meeting_type: document.getElementById("recType").value,
+        share_policy: document.getElementById("recShare").value,
+      };
+      let job;
+      try {
+        job = await apiPost("/api/jobs/record", params);
+      } catch (err) {
+        flashStatus(mount, false, `${t("jobFailed")}: ${err.message}`);
+        return;
+      }
+      state.recordingJobId = job.id;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      pollJob(job.id, mount, async (result) => {
+        state.recordingJobId = null;
+        state.data = await api("/api/state");
+        if (result && result.meeting) {
+          state.selectedPath = result.meeting;
+          state.view = "archive";
+        }
+        render();
+      });
+    });
+  }
+  if (stopBtn) {
+    stopBtn.addEventListener("click", async () => {
+      if (!state.recordingJobId) return;
+      stopBtn.disabled = true;
+      try {
+        await apiPost("/api/recording/stop", { job_id: state.recordingJobId });
+      } catch (err) {
+        flashStatus(mount, false, `${t("saveFailed")}: ${err.message}`);
+      }
+    });
+  }
 }
 
 function renderSimple(title, sub, content) {

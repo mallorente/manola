@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from threading import Event
 from typing import Callable
 
 from .audio import copy_original, normalize_audio
@@ -102,6 +103,7 @@ def create_recorded_meeting(
     live_transcript_preview: StatusCallback | None = None,
     audio_level: Callable[[dict[str, float]], None] | None = None,
     created_at: datetime | None = None,
+    stop_signal: Event | None = None,
     status: StatusCallback = noop_status,
 ) -> tuple[Path, AudioTestResult]:
     created_at = created_at or datetime.now()
@@ -158,6 +160,7 @@ def create_recorded_meeting(
                     status=status,
                     on_audio_chunk=live.add_audio,
                     on_audio_level=audio_level,
+                    stop_signal=stop_signal,
                 )
         else:
             recording = record_meeting_until_stopped(
@@ -173,6 +176,7 @@ def create_recorded_meeting(
                 stop_key=stop_key,
                 status=status,
                 on_audio_level=audio_level,
+                stop_signal=stop_signal,
             )
     else:
         status(f"Recording {source} audio into meeting archive for {duration_seconds}s...")

@@ -99,6 +99,29 @@ def test_gpu_jobs_run_one_at_a_time():
     registry.close()
 
 
+def test_request_stop_signals_handler_via_stop_event():
+    started = threading.Event()
+
+    def handler(params, report):
+        stop = params["_stop_event"]
+        started.set()
+        stop.wait(timeout=5)
+        return {"stopped": stop.is_set()}
+
+    registry = JobRegistry({"record": handler})
+    job = registry.submit("record", {})
+    assert started.wait(2)
+
+    assert registry.request_stop(job.id) is True
+    finished = registry.wait(job.id, timeout=5)
+    assert finished is not None
+    assert finished.status == "done"
+    assert finished.result == {"stopped": True}
+
+    assert registry.request_stop("does-not-exist") is False
+    registry.close()
+
+
 def test_lightweight_jobs_run_concurrently():
     started = threading.Event()
     both_started = threading.Barrier(2, timeout=5)

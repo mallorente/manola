@@ -18,9 +18,10 @@ from .doctor import collect_doctor_checks
 from .errors import ManolaError
 from .exporting import export_meeting
 from .jobs import JobRegistry, PrivacyConfirmationRequired, UnknownAction
-from .models import MeetingMetadata, SharePolicy, TranscriptionBackend
+from .models import Language, MeetingMetadata, MeetingType, ProcessOptions, SharePolicy, TranscriptionBackend
 from .pipeline import (
     apply_metadata_suggestions,
+    create_recorded_meeting,
     enrich_meeting,
     iter_meetings,
     repair_meeting,
@@ -113,6 +114,42 @@ def build_job_registry() -> JobRegistry:
         repair_meeting(meeting_dir, config, status=report)
         return {"meeting": str(meeting_dir)}
 
+    def record(params: dict[str, Any], report) -> dict[str, Any]:
+        config = load_config()
+        stop_event = params.get("_stop_event")
+        options = ProcessOptions(
+            audio_path=Path("recording.wav"),  # placeholder; overwritten by the capture path
+            meeting_type=MeetingType(params.get("meeting_type") or "general"),
+            project=(params.get("project") or None),
+            language=Language(params.get("language") or config.default_language),
+            title=(params.get("title") or None),
+            attendees=params.get("attendees") or [],
+            share_policy=SharePolicy(params.get("share_policy") or "private"),
+            transcription_backend=TranscriptionBackend(config.default_transcription_backend),
+            llm_profile=config.default_llm_profile,
+        )
+        # soundcard's Media Foundation capture needs COM on this worker thread.
+        com_initialized = _ensure_thread_com()
+        try:
+            report("Recording… click Stop to finish.")
+            meeting_dir, _capture = create_recorded_meeting(
+                options,
+                config,
+                source="meeting",
+                duration_seconds=None,
+                mic_index=config.default_mic_index,
+                speaker_index=config.default_speaker_index,
+                silence_timeout_seconds=0,  # UI controls stop; no silence auto-stop
+                pause_after_silence_seconds=0,
+                stop_signal=stop_event,
+                status=report,
+            )
+        finally:
+            if com_initialized:
+                _release_thread_com()
+        transcribe_meeting(meeting_dir, config, status=report, force=True)
+        return {"meeting": str(meeting_dir)}
+
     return JobRegistry(
         {
             "transcribe": transcribe,
@@ -120,6 +157,7 @@ def build_job_registry() -> JobRegistry:
             "enrich": enrich,
             "export": export,
             "repair": repair,
+            "record": record,
         },
         gpu_actions=frozenset({"transcribe", "repair"}),
     )
@@ -217,6 +255,8 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
                 self._update_config()
             elif parsed.path == "/api/meeting/apply":
                 self._apply_metadata()
+            elif parsed.path == "/api/recording/stop":
+                self._stop_recording()
             else:
                 self._send_error(404, "Not found")
         except Exception as exc:  # pragma: no cover - defensive HTTP boundary
@@ -236,6 +276,20 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
             update_config_value(field, value)
         type(self).app_config = load_config()
         self._send_json(public_config(self.app_config))
+
+    def _stop_recording(self) -> None:
+        if self.job_registry is None:
+            self._send_error(503, "Job registry unavailable")
+            return
+        body = self._read_json_body()
+        job_id = body.get("job_id")
+        if not job_id:
+            self._send_error(400, "Missing 'job_id'")
+            return
+        if not self.job_registry.request_stop(job_id):
+            self._send_error(404, "Job not found")
+            return
+        self._send_json({"stopped": True, "job_id": job_id})
 
     def _apply_metadata(self) -> None:
         body = self._read_json_body()
