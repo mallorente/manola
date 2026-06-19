@@ -77,6 +77,24 @@ const I18N = {
     jobDone: "Done",
     jobFailed: "Failed",
     jobRetry: "Try again",
+    privacyConfirm: "This sends the meeting transcript to the configured remote LLM. Continue?",
+    actions: "Actions",
+    sharePolicy: "Share policy",
+    policyReport: "Report only",
+    policyReportTranscript: "Report + transcript",
+    policyAll: "Everything (incl. audio)",
+    export: "Export",
+    apply: "Apply",
+    reject: "Reject",
+    save: "Save",
+    saved: "Saved",
+    saveFailed: "Save failed",
+    saveDevices: "Save devices",
+    microphone: "Microphone",
+    speakerLoopback: "Speaker / loopback",
+    systemDefault: "System default",
+    notConfigured: "Not configured",
+    lowConfidenceConfirm: "This suggestion looks low confidence. Apply anyway?",
     noReport: "No report generated yet.",
     noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
     noTranscript: "No transcript generated yet.",
@@ -170,6 +188,24 @@ const I18N = {
     jobDone: "Hecho",
     jobFailed: "Fallo",
     jobRetry: "Reintentar",
+    privacyConfirm: "Esto envía la transcripción de la reunión al LLM remoto configurado. ¿Continuar?",
+    actions: "Acciones",
+    sharePolicy: "Política de compartición",
+    policyReport: "Solo informe",
+    policyReportTranscript: "Informe + transcripción",
+    policyAll: "Todo (incl. audio)",
+    export: "Exportar",
+    apply: "Aplicar",
+    reject: "Descartar",
+    save: "Guardar",
+    saved: "Guardado",
+    saveFailed: "Error al guardar",
+    saveDevices: "Guardar dispositivos",
+    microphone: "Micrófono",
+    speakerLoopback: "Altavoz / loopback",
+    systemDefault: "Predeterminado del sistema",
+    notConfigured: "Sin configurar",
+    lowConfidenceConfirm: "Esta sugerencia parece de baja confianza. ¿Aplicar de todos modos?",
     noReport: "Aun no hay informe generado.",
     noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
     noTranscript: "Aun no hay transcripcion generada.",
@@ -307,6 +343,39 @@ async function refreshMeeting(path) {
   const idx = (state.data?.meetings || []).findIndex((x) => x.path === path);
   if (idx >= 0) state.data.meetings[idx] = updated;
   render();
+}
+
+async function apiPost(path, body) {
+  return api(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+// Mirror the CLI's explicit remote-LLM privacy notice before summarize/enrich.
+function confirmRemoteLlm() {
+  return window.confirm(t("privacyConfirm"));
+}
+
+// Generic helper that wires a button to a job via the reusable component.
+// Batch 3 actions (regenerate, enrich, export, repair) all go through here.
+function wireJobButton(btn, mount, action, params, { needsConfirm = false, onDone } = {}) {
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    if (needsConfirm && !confirmRemoteLlm()) return;
+    btn.disabled = true;
+    await runJob(action, params, mount, { confirmRemoteLlm: needsConfirm, onDone });
+    btn.disabled = false;
+  });
+}
+
+// Tiny inline status for non-job POSTs (config/apply): saved / failed.
+function flashStatus(mount, ok, message) {
+  if (!mount) return;
+  const cls = ok ? "done" : "failed";
+  const label = message || (ok ? t("saved") : t("saveFailed"));
+  mount.innerHTML = `<span class="job-status ${cls}"><span class="job-dot ${cls}"></span>${escapeHtml(label)}</span>`;
 }
 
 async function boot() {
@@ -549,7 +618,52 @@ function renderOverview(body, m) {
       <h2>Pipeline</h2>
       ${pipelineRows(m)}
     </div>
-    ${disabledWorkflowPanel(m)}`;
+    ${actionsPanel(m)}`;
+  bindActionsPanel(m);
+}
+
+function actionsPanel(m) {
+  const policies = ["report", "report_transcript", "all"];
+  const labels = { report: t("policyReport"), report_transcript: t("policyReportTranscript"), all: t("policyAll") };
+  const current = m.share_policy && m.share_policy !== "private" ? m.share_policy : "report";
+  return `<div class="panel">
+    <h2>${t("actions")}</h2>
+    <div class="metadata-actions">
+      <button class="secondary-button" id="ovRetranscribeBtn" type="button">${t("retranscribe")}</button>
+      <button class="secondary-button" id="ovRegenerateBtn" type="button">${t("regenerateReport")}</button>
+      <button class="secondary-button" id="ovEnrichBtn" type="button">${t("enrichMetadata")}</button>
+      <button class="secondary-button" id="ovRepairBtn" type="button">${t("repairAudio")}</button>
+    </div>
+    <span class="job-mount" id="ovJobStatus"></span>
+    <div class="setting-row" style="margin-top:10px">
+      <span>${t("sharePolicy")}</span>
+      <select id="exportPolicy" class="control sort-select">
+        ${policies.map((p) => `<option value="${p}" ${p === current ? "selected" : ""}>${escapeHtml(labels[p])}</option>`).join("")}
+      </select>
+      <button class="secondary-button" id="exportBtn" type="button">${t("export")}</button>
+      <span class="job-mount" id="exportJob"></span>
+    </div>
+    <p class="setting-sub">Export requires a shared directory configured in Settings.</p>
+  </div>`;
+}
+
+function bindActionsPanel(m) {
+  const status = document.getElementById("ovJobStatus");
+  wireJobButton(document.getElementById("ovRetranscribeBtn"), status, "transcribe", { meeting: m.path, force: true }, { onDone: async () => { await refreshMeeting(m.path); } });
+  wireJobButton(document.getElementById("ovRegenerateBtn"), status, "summarize", { meeting: m.path, force: true }, { needsConfirm: true, onDone: async () => { await refreshMeeting(m.path); } });
+  wireJobButton(document.getElementById("ovEnrichBtn"), status, "enrich", { meeting: m.path, force: true }, { needsConfirm: true, onDone: async () => { await refreshMeeting(m.path); } });
+  wireJobButton(document.getElementById("ovRepairBtn"), status, "repair", { meeting: m.path }, { onDone: async () => { await refreshMeeting(m.path); } });
+
+  const exportBtn = document.getElementById("exportBtn");
+  const exportMount = document.getElementById("exportJob");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", async () => {
+      const policy = document.getElementById("exportPolicy").value;
+      exportBtn.disabled = true;
+      await runJob("export", { meeting: m.path, policy }, exportMount, {});
+      exportBtn.disabled = false;
+    });
+  }
 }
 
 function renderTranscript(body, m) {
@@ -594,7 +708,7 @@ function bindRetranscribe(m) {
 function renderReport(body, m) {
   const reportSections = renderMarkdownSections(m.report_text);
   body.innerHTML = `
-    ${m.report_stale ? `<div class="panel warn">${t("reportStale")} ${gapButton("reportBackend")}</div>` : ""}
+    ${m.report_stale ? `<div class="panel warn">${t("reportStale")}</div>` : ""}
     <div class="panel report-context">
       <div>
         <strong>report.md</strong>
@@ -605,9 +719,19 @@ function renderReport(body, m) {
           <span>${escapeHtml(m.language || "auto")}</span>
         </div>
       </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("regenerateReport")}</button>
+      <div class="action-with-status">
+        <button class="secondary-button" id="regenerateBtn" type="button">${t("regenerateReport")}</button>
+        <span class="job-mount" id="regenerateJob"></span>
+      </div>
     </div>
-    ${m.report_text ? `<div class="report-sections">${reportSections}</div>` : `<div class="empty"><strong>${t("noReport")}</strong><p>${t("noReportSub")}</p>${gapButton("reportBackend")}</div>`}`;
+    ${m.report_text ? `<div class="report-sections">${reportSections}</div>` : `<div class="empty"><strong>${t("noReport")}</strong><p>${t("noReportSub")}</p></div>`}`;
+  wireJobButton(
+    document.getElementById("regenerateBtn"),
+    document.getElementById("regenerateJob"),
+    "summarize",
+    { meeting: m.path, force: true },
+    { needsConfirm: true, onDone: async () => { await refreshMeeting(m.path); } },
+  );
 }
 
 function renderAudio(body, m) {
@@ -626,8 +750,8 @@ function renderAudioTab(body, m) {
     !m.audio.normalized ? t("normalizedAudio") : null,
   ].filter(Boolean);
   body.innerHTML = `
-    ${m.health.normalized_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p>${gapButton("repairBackend")}</div>` : ""}
-    ${missingWarnings.length ? `<div class="panel warn"><strong>${t("missingAudio")}</strong><p>${escapeHtml(missingWarnings.join(", "))}</p>${gapButton("repairBackend")}</div>` : ""}
+    ${m.health.normalized_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p></div>` : ""}
+    ${missingWarnings.length ? `<div class="panel warn"><strong>${t("missingAudio")}</strong><p>${escapeHtml(missingWarnings.join(", "))}</p></div>` : ""}
     <div class="panel report-context">
       <div>
         <strong>Audio artifacts</strong>
@@ -636,13 +760,23 @@ function renderAudioTab(body, m) {
           <span>${escapeHtml(m.duration_label || "duration unknown")}</span>
         </div>
       </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("repairAudio")}</button>
+      <div class="action-with-status">
+        <button class="secondary-button" id="repairBtn" type="button">${t("repairAudio")}</button>
+        <span class="job-mount" id="repairJob"></span>
+      </div>
     </div>
     <div class="grid-2 audio-grid">
       ${audioArtifact(t("sourceAudio"), m.audio.original)}
       ${audioArtifact(t("normalizedAudio"), m.audio.normalized)}
     </div>
     <div class="panel"><h2>Files</h2><div class="mono muted">${escapeHtml(m.path)}</div></div>`;
+  wireJobButton(
+    document.getElementById("repairBtn"),
+    document.getElementById("repairJob"),
+    "repair",
+    { meeting: m.path },
+    { onDone: async () => { await refreshMeeting(m.path); } },
+  );
 }
 
 function renderMetadata(body, m) {
@@ -665,18 +799,63 @@ function renderMetadata(body, m) {
     ["Path", m.path],
   ];
   body.innerHTML = `
-    <div class="panel warn report-context">
+    <div class="panel report-context">
       <div>
-        <strong>${t("metadataReadonly")}</strong>
-        <p class="muted">Edit, save, accept, reject, and apply controls are intentionally disabled because metadata write endpoints do not exist yet.</p>
+        <strong>${t("enrichMetadata")}</strong>
+        <p class="muted">${t("metadataReadonly")}</p>
       </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("saveMetadata")}</button>
+      <div class="action-with-status">
+        <button class="secondary-button" id="enrichBtn" type="button">${t("enrichMetadata")}</button>
+        <span class="job-mount" id="enrichJob"></span>
+      </div>
     </div>
     <div class="grid-2">
       ${metadataPanel("Core metadata", coreRows)}
       ${metadataPanel("Model and files", modelRows)}
     </div>
     ${metadataSuggestions(m.metadata_suggestions)}`;
+  wireJobButton(
+    document.getElementById("enrichBtn"),
+    document.getElementById("enrichJob"),
+    "enrich",
+    { meeting: m.path, force: true },
+    { needsConfirm: true, onDone: async () => { await refreshMeeting(m.path); } },
+  );
+  bindMetadataApply(m);
+}
+
+// Apply a confirmed suggestion to metadata.json via the safe-write endpoint.
+// The meeting path can change (a title apply renames the folder), so we adopt
+// the returned record and re-point the selection before re-rendering.
+async function applySuggestion(m, updates, mount) {
+  try {
+    const updated = await apiPost("/api/meeting/apply", { meeting: m.path, updates });
+    const idx = (state.data?.meetings || []).findIndex((x) => x.path === m.path);
+    if (idx >= 0) state.data.meetings[idx] = updated;
+    state.selectedPath = updated.path;
+    render();
+  } catch (err) {
+    flashStatus(mount, false, `${t("saveFailed")}: ${err.message}`);
+  }
+}
+
+function bindMetadataApply(m) {
+  const s = m.metadata_suggestions;
+  if (!s || s.error) return;
+  const mount = document.getElementById("applyStatus");
+  const wire = (id, buildUpdates, { confirmMessage } = {}) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener("click", async () => {
+      if (confirmMessage && !window.confirm(confirmMessage)) return;
+      btn.disabled = true;
+      await applySuggestion(m, buildUpdates(), mount);
+    });
+  };
+  if (s.suggested_title) wire("applyTitle", () => ({ title: s.suggested_title }), { confirmMessage: `${t("apply")}: "${s.suggested_title}"? (folder rename)` });
+  if (s.suggested_meeting_type) wire("applyType", () => ({ meeting_type: s.suggested_meeting_type }));
+  if (s.suggested_project) wire("applyProject", () => ({ project: s.suggested_project }));
+  if (s.suggested_attendees && s.suggested_attendees.length) wire("applyAttendees", () => ({ attendees: s.suggested_attendees }));
 }
 
 function renderSettings() {
@@ -703,26 +882,91 @@ function renderSettings() {
   });
 
   const config = state.data.config;
-  const sections = [
-    [t("archive"), [[t("workspaceDir"), config.workspace_dir], ["Models directory", config.models_dir]]],
-    [t("transcription"), [[t("transcriptLanguage"), config.default_language], ["Backend", config.default_transcription_backend], [t("model"), config.local_whisper_model], [t("device"), config.local_whisper_device], [t("computeType"), config.local_whisper_compute_type], ["Chunk seconds", config.local_whisper_chunk_seconds], ["Live model", config.live_transcript_model], ["Live device", config.live_transcript_device], ["Live compute", config.live_transcript_compute_type]]],
-    [t("reports"), [[t("defaultLlmProfile"), config.default_llm_profile], [t("generateReports"), String(config.default_generate_llm_report)], ["Profiles", Object.keys(config.llm_profiles || {}).join(", ") || "none"]]],
-    [t("sharing"), [[t("sharedDir"), config.shared_dir || "not configured"]]],
-    [t("prompts"), [["Prompts directory", config.prompts_dir]]],
-    [t("advanced"), [["Config", config.config_path], ["Secrets", config.secrets_path], ["Default mic index", config.default_mic_index ?? "not configured"], ["Default speaker index", config.default_speaker_index ?? "not configured"]]],
+  const profiles = Object.keys(config.llm_profiles || {});
+  // Editable rows write to ~/.manola/config.toml via POST /api/config.
+  const editable = [
+    [t("archive"), [
+      ["workspace_dir", t("workspaceDir"), "text", config.workspace_dir],
+    ]],
+    [t("transcription"), [
+      ["default_language", t("transcriptLanguage"), "text", config.default_language],
+      ["default_transcription_backend", "Backend", "select", config.default_transcription_backend, ["local", "remote"]],
+      ["local_whisper_model", t("model"), "text", config.local_whisper_model],
+      ["local_whisper_device", t("device"), "select", config.local_whisper_device, ["cpu", "cuda"]],
+      ["local_whisper_compute_type", t("computeType"), "text", config.local_whisper_compute_type],
+    ]],
+    [t("reports"), [
+      ["default_llm_profile", t("defaultLlmProfile"), "select", config.default_llm_profile, profiles],
+      ["default_generate_llm_report", t("generateReports"), "bool", config.default_generate_llm_report],
+    ]],
+    [t("sharing"), [
+      ["shared_dir", t("sharedDir"), "text", config.shared_dir || ""],
+    ]],
+  ];
+  const readonly = [
+    [t("advanced"), [
+      ["Models directory", config.models_dir],
+      ["Prompts directory", config.prompts_dir],
+      ["Profiles", profiles.join(", ") || "none"],
+      ["Config", config.config_path],
+      ["Secrets", config.secrets_path],
+    ]],
   ];
   const holder = document.getElementById("settingsSections");
-  holder.innerHTML = `<div class="settings-section readonly-config"><h2>${t("backendConfig")}</h2><p class="muted">${t("backendConfigSub")}</p></div>` + sections.map(([title, rows]) => `
-    <div class="settings-section">
-      <h2>${escapeHtml(title)}</h2>
-      ${rows.map(([k, v]) => `<div class="setting-row"><div><div class="setting-title">${escapeHtml(k)}</div><div class="setting-sub">Read-only Manola config</div></div><div class="control mono readonly-value" aria-readonly="true">${escapeHtml(String(v))}</div></div>`).join("")}
-    </div>`).join("");
+  holder.innerHTML =
+    editable.map(([title, rows]) => `
+      <div class="settings-section">
+        <h2>${escapeHtml(title)}</h2>
+        ${rows.map((row) => settingControl(...row)).join("")}
+      </div>`).join("") +
+    `<div class="settings-section readonly-config"><h2>${t("backendConfig")}</h2><p class="muted">${t("backendConfigSub")}</p></div>` +
+    readonly.map(([title, rows]) => `
+      <div class="settings-section">
+        <h2>${escapeHtml(title)}</h2>
+        ${rows.map(([k, v]) => `<div class="setting-row"><div><div class="setting-title">${escapeHtml(k)}</div><div class="setting-sub">Read-only Manola config</div></div><div class="control mono readonly-value" aria-readonly="true">${escapeHtml(String(v))}</div></div>`).join("")}
+      </div>`).join("");
+  editable.forEach(([, rows]) => rows.forEach((row) => bindSettingControl(row[0], row[2])));
+}
+
+function settingControl(field, label, kind, value, options) {
+  let control;
+  if (kind === "select") {
+    control = `<select id="cfg_${field}" class="control sort-select">${(options || []).map((o) => `<option value="${escapeHtml(o)}" ${String(o) === String(value) ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
+  } else if (kind === "bool") {
+    control = `<select id="cfg_${field}" class="control sort-select"><option value="true" ${value ? "selected" : ""}>true</option><option value="false" ${value ? "" : "selected"}>false</option></select>`;
+  } else {
+    control = `<input id="cfg_${field}" class="control" type="text" value="${escapeHtml(value ?? "")}" />`;
+  }
+  return `<div class="setting-row">
+    <div><div class="setting-title">${escapeHtml(label)}</div><div class="setting-sub mono">${escapeHtml(field)}</div></div>
+    <div class="control-group">${control}<span class="job-mount" id="st_${field}"></span></div>
+  </div>`;
+}
+
+function bindSettingControl(field, kind) {
+  const input = document.getElementById(`cfg_${field}`);
+  if (!input) return;
+  const event = kind === "text" ? "change" : "change";
+  input.addEventListener(event, () => saveConfig(field, input.value, document.getElementById(`st_${field}`)));
+}
+
+async function saveConfig(field, value, mount) {
+  try {
+    const updated = await apiPost("/api/config", { [field]: value });
+    state.data.config = updated;
+    flashStatus(mount, true);
+  } catch (err) {
+    flashStatus(mount, false, `${t("saveFailed")}: ${err.message}`);
+  }
 }
 
 function renderDevices() {
+  const report = state.data.devices;
+  const config = state.data.config;
   renderSimple(t("devices"), t("devicesSub"), () => {
-    const report = state.data.devices;
-    if (report.error) return `<div class="panel warn">${escapeHtml(report.error)}</div>${commandPanel("Device CLI checks", ["uv run manola devices", "uv run manola audio doctor"])}`;
+    if (report.error) return `<div class="panel warn">${escapeHtml(report.error)}</div>`;
+    const micOptions = deviceSelect("cfg_default_mic_index", report.microphones, config.default_mic_index);
+    const spkOptions = deviceSelect("cfg_default_speaker_index", report.speakers, config.default_speaker_index);
     return `
       <div class="panel report-context">
         <div>
@@ -733,14 +977,52 @@ function renderDevices() {
             <span class="badge ${report.loopbacks?.length ? "good" : "warn"}">${report.loopbacks?.length || 0} loopbacks</span>
           </div>
         </div>
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("testDevices")}</button>
+      </div>
+      <div class="panel">
+        <h2>Default capture devices</h2>
+        <div class="setting-row"><div><div class="setting-title">${t("microphone")}</div><div class="setting-sub mono">default_mic_index</div></div><div class="control-group">${micOptions}</div></div>
+        <div class="setting-row"><div><div class="setting-title">${t("speakerLoopback")}</div><div class="setting-sub mono">default_speaker_index</div></div><div class="control-group">${spkOptions}</div></div>
+        <div class="metadata-actions">
+          <button class="secondary-button" id="saveDevicesBtn" type="button">${t("saveDevices")}</button>
+          <span class="job-mount" id="saveDevicesStatus"></span>
+        </div>
       </div>
       <div class="grid-2">
         ${deviceList("Microphones", report.microphones, report.default_microphone)}
         ${deviceList("Speakers", report.speakers, report.default_speaker)}
       </div>
-      <div class="panel"><h2>Loopbacks</h2>${(report.loopbacks || []).map((d) => `<div class="setting-row"><span class="status-dot ok"></span><div>${escapeHtml(d)}</div></div>`).join("") || "<p class='muted'>None detected.</p>"}</div>
-      ${commandPanel("Device CLI checks", ["uv run manola devices", "uv run manola audio setup", "uv run manola audio test --source meeting --duration 10"])}`;
+      <div class="panel"><h2>Loopbacks</h2>${(report.loopbacks || []).map((d) => `<div class="setting-row"><span class="status-dot ok"></span><div>${escapeHtml(d)}</div></div>`).join("") || "<p class='muted'>None detected.</p>"}</div>`;
+  });
+  bindDeviceSave();
+}
+
+// Build a device picker. Value is the 1-based index used by `manola audio setup`,
+// or empty for the system default.
+function deviceSelect(id, devices, selectedIndex) {
+  const opts = [`<option value="" ${selectedIndex === null || selectedIndex === undefined ? "selected" : ""}>${t("systemDefault")}</option>`]
+    .concat((devices || []).map((d, i) => {
+      const idx = i + 1;
+      return `<option value="${idx}" ${String(idx) === String(selectedIndex) ? "selected" : ""}>${idx} — ${escapeHtml(d)}</option>`;
+    }));
+  return `<select id="${id}" class="control sort-select">${opts.join("")}</select>`;
+}
+
+function bindDeviceSave() {
+  const btn = document.getElementById("saveDevicesBtn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const mic = document.getElementById("cfg_default_mic_index").value;
+    const spk = document.getElementById("cfg_default_speaker_index").value;
+    const mount = document.getElementById("saveDevicesStatus");
+    btn.disabled = true;
+    try {
+      const updated = await apiPost("/api/config", { default_mic_index: mic, default_speaker_index: spk });
+      state.data.config = updated;
+      flashStatus(mount, true);
+    } catch (err) {
+      flashStatus(mount, false, `${t("saveFailed")}: ${err.message}`);
+    }
+    btn.disabled = false;
   });
 }
 
@@ -874,7 +1156,6 @@ function metadataPanel(title, rows) {
   return `<div class="panel metadata-panel">
     <h2>${escapeHtml(title)}</h2>
     ${rows.map(([key, value]) => `<div class="setting-row"><span>${escapeHtml(key)}</span><strong>${metadataValue(value)}</strong></div>`).join("")}
-    <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("saveMetadata")}</button>
   </div>`;
 }
 
@@ -886,34 +1167,33 @@ function metadataValue(value) {
 
 function metadataSuggestions(suggestions) {
   if (!suggestions) {
-    return `<div class="panel metadata-suggestions"><h2>Metadata suggestions</h2><p class="muted">${t("noSuggestions")}</p>${disabledAction(t("applySuggestions"), "metadataBackend")}</div>`;
+    return `<div class="panel metadata-suggestions"><h2>Metadata suggestions</h2><p class="muted">${t("noSuggestions")}</p></div>`;
   }
   if (suggestions.error) {
-    return `<div class="panel warn"><strong>Metadata suggestions</strong><p>${escapeHtml(suggestions.error)}</p>${gapButton("metadataBackend")}</div>`;
+    return `<div class="panel warn"><strong>Metadata suggestions</strong><p>${escapeHtml(suggestions.error)}</p></div>`;
   }
-  const rows = [
-    ["Suggested title", suggestions.suggested_title],
-    ["Suggested type", suggestions.suggested_meeting_type],
-    ["Suggested project", suggestions.suggested_project],
-    ["Suggested attendees", suggestions.suggested_attendees || []],
+  // Applyable fields get an Apply button; the rest are informational.
+  const applyable = [
+    ["Suggested title", suggestions.suggested_title, "applyTitle"],
+    ["Suggested type", suggestions.suggested_meeting_type, "applyType"],
+    ["Suggested project", suggestions.suggested_project, "applyProject"],
+    ["Suggested attendees", suggestions.suggested_attendees || [], "applyAttendees"],
+  ];
+  const info = [
     ["Notable terms", suggestions.notable_terms || []],
     ["Summary", suggestions.summary],
     ["Confidence notes", suggestions.confidence_notes || []],
   ];
   const corrections = suggestions.possible_name_corrections || [];
+  const hasValue = (v) => Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== "";
   return `<div class="panel metadata-suggestions">
     <div class="report-context">
       <h2>Metadata suggestions</h2>
-      ${disabledAction(t("applySuggestions"), "metadataBackend")}
+      <span class="job-mount" id="applyStatus"></span>
     </div>
-    ${rows.map(([key, value]) => `<div class="setting-row"><span>${escapeHtml(key)}</span><strong>${metadataValue(value)}</strong></div>`).join("")}
+    ${applyable.map(([key, value, id]) => `<div class="setting-row"><span>${escapeHtml(key)}</span><strong>${metadataValue(value)}</strong>${hasValue(value) ? `<button class="secondary-button small" id="${id}" type="button">${t("apply")}</button>` : ""}</div>`).join("")}
+    ${info.map(([key, value]) => `<div class="setting-row"><span>${escapeHtml(key)}</span><strong>${metadataValue(value)}</strong></div>`).join("")}
     ${corrections.length ? `<h3>Name corrections</h3>${corrections.map((item) => `<div class="setting-row"><span>${escapeHtml(item.heard_as || "unknown")}</span><strong>${escapeHtml(item.suggested || "unknown")}</strong></div><div class="setting-sub">${escapeHtml([item.confidence ? `confidence: ${item.confidence}` : "", item.evidence ? `evidence: ${item.evidence}` : ""].filter(Boolean).join(" · ") || "no confidence detail")}</div>`).join("")}` : ""}
-    <div class="metadata-actions">
-      ${disabledAction("Accept", "metadataBackend")}
-      ${disabledAction("Reject", "metadataBackend")}
-      ${disabledAction(t("saveMetadata"), "metadataBackend")}
-    </div>
-    ${commandPanel("Enrich with CLI", ["uv run manola enrich <meeting-id-or-path>"])}
   </div>`;
 }
 
@@ -925,27 +1205,6 @@ function pipelineRows(m) {
     ["Report generated", !!m.report_text],
   ];
   return rows.map(([label, ok]) => `<div class="setting-row"><span class="status-dot ${ok ? "ok" : "warn"}"></span><span>${escapeHtml(label)}</span></div>`).join("");
-}
-
-function disabledWorkflowPanel(m) {
-  const commands = [
-    `uv run manola enrich ${m.id}`,
-    `uv run manola export ${m.id} --share all`,
-    `uv run manola transcribe ${m.id} --force --summarize`,
-    `uv run manola summarize ${m.id} --force`,
-  ];
-  return `<div class="panel">
-    <h2>Unsupported UI actions</h2>
-    <p class="muted">These workflows are available through the CLI where noted, but need async jobs, write endpoints, and failure reporting before the browser UI can run them.</p>
-    <div class="metadata-actions">
-      ${disabledAction(t("enrichMetadata"), "metadataBackend")}
-      ${disabledAction(t("exportMeeting"), "exportBackend")}
-      ${disabledAction(t("repairAudio"), "repairBackend")}
-      ${disabledAction(t("retranscribe"), "transcribeBackend")}
-      ${disabledAction(t("regenerateReport"), "reportBackend")}
-    </div>
-    ${commandPanel("Workflow CLI commands", commands)}
-  </div>`;
 }
 
 function importPipelineRows() {

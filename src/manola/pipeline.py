@@ -458,6 +458,94 @@ def apply_suggested_title(
     return new_dir
 
 
+def repair_meeting(
+    meeting_dir: Path,
+    config: AppConfig,
+    status: StatusCallback = noop_status,
+) -> Path:
+    """Re-normalize from the original audio and re-transcribe, as a recovery step.
+
+    Used when a meeting's health check flags truncated normalized audio or a
+    transcript shorter than the source. The original recording
+    (``audio_original``) is never overwritten; only ``audio_normalized`` and the
+    transcript are regenerated.
+    """
+    status(f"Loading meeting metadata from {meeting_dir}...")
+    metadata_path = meeting_dir / "metadata.json"
+    if not metadata_path.exists():
+        raise ManolaError(f"No metadata.json found in {meeting_dir}.")
+
+    metadata = MeetingMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+    original = meeting_dir / metadata.audio_original
+    if not original.exists():
+        raise ManolaError(f"No source audio found at {original}; cannot repair.")
+
+    normalized = meeting_dir / metadata.audio_normalized
+    status("Re-normalizing source audio with FFmpeg...")
+    normalize_audio(original, normalized)
+    status("Re-transcribing repaired audio...")
+    return transcribe_meeting(meeting_dir, config, status=status, force=True)
+
+
+_APPLICABLE_METADATA_FIELDS = ("title", "project", "attendees", "meeting_type", "language", "share_policy")
+
+
+def apply_metadata_suggestions(
+    meeting_dir: Path,
+    config: AppConfig,
+    updates: dict[str, object],
+    status: StatusCallback = noop_status,
+) -> Path:
+    """Apply user-confirmed metadata fields into ``metadata.json``.
+
+    Only keys in ``_APPLICABLE_METADATA_FIELDS`` are honored; everything else is
+    ignored. Raw ``transcript.md`` and untouched metadata fields are preserved.
+    If the change alters the canonical folder name (title/type/project/attendees),
+    the meeting folder is renamed via :func:`meeting_folder_name`; relative
+    artifact paths stay valid, only ``id`` and the folder change. A name
+    collision keeps the current folder and still writes the metadata. Unlike
+    :func:`apply_suggested_title`, this works on meetings that already have a
+    non-generic title (retroactive re-title).
+    """
+    metadata_path = meeting_dir / "metadata.json"
+    if not metadata_path.exists():
+        raise ManolaError(f"No metadata.json found in {meeting_dir}.")
+
+    current = MeetingMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+    confirmed = {key: value for key, value in updates.items() if key in _APPLICABLE_METADATA_FIELDS}
+    if not confirmed:
+        return meeting_dir
+    if "title" in confirmed and not str(confirmed["title"]).strip():
+        raise ManolaError("Refusing to apply an empty meeting title.")
+
+    merged = {**current.model_dump(mode="json"), **confirmed}
+    updated = MeetingMetadata.model_validate(merged)  # validates types/enums
+
+    target_parent = proposed_archive_parent(config.workspace_dir, updated.project, updated.meeting_type)
+    target_dir = target_parent / meeting_folder_name(
+        created_at=updated.created_at,
+        meeting_type=updated.meeting_type,
+        title=updated.title,
+        attendees=updated.attendees,
+    )
+    new_dir = meeting_dir
+    if target_dir != meeting_dir and not target_dir.exists():
+        status(f"Renaming meeting folder to {target_dir.name}...")
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        meeting_dir.rename(target_dir)
+        new_dir = target_dir
+    elif target_dir != meeting_dir:
+        status("Target folder already exists; keeping current folder name.")
+
+    updated = updated.model_copy(update={"id": new_dir.name})
+    (new_dir / "metadata.json").write_text(
+        json.dumps(updated.model_dump(mode="json"), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    status("Applied metadata suggestions.")
+    return new_dir
+
+
 def _transcript_document(metadata: MeetingMetadata, transcript: str) -> str:
     lines = [
         f"# Transcript: {metadata.title}",
