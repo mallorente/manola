@@ -30,6 +30,17 @@ TYPE_FOLDER_NAMES = {
 }
 
 
+_GENERIC_TITLE_RE = re.compile(r"^Recording \d{2}:\d{2}$")
+
+
+def generic_recording_title(created_at: datetime) -> str:
+    return f"Recording {created_at:%H:%M}"
+
+
+def is_generic_recording_title(title: str | None) -> bool:
+    return bool(title and _GENERIC_TITLE_RE.match(title.strip()))
+
+
 def slugify(value: str | None, fallback: str) -> str:
     text = unicodedata.normalize("NFKD", (value or "").strip().lower())
     text = "".join(character for character in text if not unicodedata.combining(character))

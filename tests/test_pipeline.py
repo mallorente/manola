@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 
 from manola.config import AppConfig
 from manola.models import MetadataSuggestions, MeetingType, ProcessOptions, TranscriptionBackend
-from manola.pipeline import create_recorded_meeting, enrich_meeting, import_recording, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
+from manola.pipeline import apply_suggested_title, create_recorded_meeting, enrich_meeting, import_recording, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
 
 
 def fake_normalize(source_path: Path, target: Path) -> Path:
@@ -217,6 +218,59 @@ def test_enrich_meeting_skips_existing_suggestions(monkeypatch, tmp_path: Path) 
     assert "Existing" in suggestions_path.read_text(encoding="utf-8")
 
 
+def test_apply_suggested_title_renames_generic_meeting(monkeypatch, tmp_path: Path) -> None:
+    source = tmp_path / "recording.m4a"
+    source.write_text("fake audio", encoding="utf-8")
+    monkeypatch.setattr("manola.pipeline.normalize_audio", fake_normalize)
+    config = AppConfig(workspace_dir=tmp_path / "meetings")
+    meeting_dir = import_recording(ProcessOptions(audio_path=source, title="Recording 10:30"), config)
+
+    new_dir = apply_suggested_title(
+        meeting_dir,
+        config,
+        MetadataSuggestions(suggested_title="Quarterly Budget Review"),
+    )
+
+    assert new_dir != meeting_dir
+    assert not meeting_dir.exists()
+    assert "quarterly-budget-review" in new_dir.name
+    metadata = json.loads((new_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["title"] == "Quarterly Budget Review"
+    assert metadata["id"] == new_dir.name
+
+
+def test_apply_suggested_title_keeps_explicit_title(monkeypatch, tmp_path: Path) -> None:
+    source = tmp_path / "recording.m4a"
+    source.write_text("fake audio", encoding="utf-8")
+    monkeypatch.setattr("manola.pipeline.normalize_audio", fake_normalize)
+    config = AppConfig(workspace_dir=tmp_path / "meetings")
+    meeting_dir = import_recording(ProcessOptions(audio_path=source, title="Investor Sync"), config)
+
+    new_dir = apply_suggested_title(
+        meeting_dir,
+        config,
+        MetadataSuggestions(suggested_title="Something Else"),
+    )
+
+    assert new_dir == meeting_dir
+    metadata = json.loads((meeting_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["title"] == "Investor Sync"
+
+
+def test_apply_suggested_title_noop_without_suggestion(monkeypatch, tmp_path: Path) -> None:
+    source = tmp_path / "recording.m4a"
+    source.write_text("fake audio", encoding="utf-8")
+    monkeypatch.setattr("manola.pipeline.normalize_audio", fake_normalize)
+    config = AppConfig(workspace_dir=tmp_path / "meetings")
+    meeting_dir = import_recording(ProcessOptions(audio_path=source, title="Recording 10:30"), config)
+
+    new_dir = apply_suggested_title(meeting_dir, config, MetadataSuggestions())
+
+    assert new_dir == meeting_dir
+    metadata = json.loads((meeting_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["title"] == "Recording 10:30"
+
+
 def test_resolve_meeting_accepts_id(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "recording.m4a"
     source.write_text("fake audio", encoding="utf-8")
@@ -289,3 +343,38 @@ def test_create_recorded_meeting_enables_live_transcript_for_timed_meeting(monke
     assert captured["duration_seconds"] == 2
     assert result.rms == 0.1
     assert (meeting_dir / "live_transcript.md").read_text(encoding="utf-8") == "live preview\n"
+
+
+def test_create_recorded_meeting_forwards_audio_level_callback(monkeypatch, tmp_path: Path) -> None:
+    class FakeRecording:
+        path = tmp_path / "meetings" / "audio" / "recorded.wav"
+        duration_seconds = 2.0
+        rms = 0.1
+        sample_rate = 48000
+        silent = False
+        component_rms = {"mic": 0.1, "system": 0.2}
+
+    captured = {}
+
+    def fake_record_meeting_until_stopped(*, target, on_audio_level, **kwargs):
+        captured["on_audio_level"] = on_audio_level
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("wav", encoding="utf-8")
+        on_audio_level({"mic": 0.1, "system": 0.2})
+        return FakeRecording()
+
+    levels = []
+    audio_level = levels.append
+    monkeypatch.setattr("manola.pipeline.record_meeting_until_stopped", fake_record_meeting_until_stopped)
+    monkeypatch.setattr("manola.pipeline.normalize_audio", fake_normalize)
+
+    create_recorded_meeting(
+        ProcessOptions(audio_path=Path("placeholder.wav"), title="Measured Call"),
+        AppConfig(workspace_dir=tmp_path / "meetings"),
+        source="meeting",
+        duration_seconds=None,
+        audio_level=audio_level,
+    )
+
+    assert captured["on_audio_level"] is audio_level
+    assert levels == [{"mic": 0.1, "system": 0.2}]

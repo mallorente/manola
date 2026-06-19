@@ -15,11 +15,12 @@ from .audio import copy_original, enhance_voice, normalize_audio
 from .audio_recording import inspect_audio_devices, record_audio_test, record_wav
 from .exporting import export_meeting
 from .models_store import FASTER_WHISPER_REPOS, download_faster_whisper_model, list_downloaded_models
-from .models import Language, MeetingType, ProcessOptions, SharePolicy, TranscriptionBackend
-from .naming import meeting_folder_name, proposed_archive_parent
-from .pipeline import create_recorded_meeting, enrich_meeting, import_recording, iter_meetings, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
+from .models import Language, MeetingType, MetadataSuggestions, ProcessOptions, SharePolicy, TranscriptionBackend
+from .naming import generic_recording_title, meeting_folder_name, proposed_archive_parent
+from .pipeline import apply_suggested_title, create_recorded_meeting, enrich_meeting, import_recording, iter_meetings, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
 from .prompts import iter_prompt_status, load_prompt_template
 from .transcription import transcribe_audio
+from .ui_server import run_ui_server
 
 
 app = typer.Typer(
@@ -196,6 +197,27 @@ def _print_live_transcript_preview(text: str) -> None:
     typer.echo(_console_safe_text(text))
 
 
+def _audio_level_meter(enabled: bool):
+    if not enabled or not sys.stdout.isatty():
+        return None
+
+    width = 24
+
+    def render(levels: dict[str, float]) -> None:
+        mic = levels.get("mic", 0.0)
+        system = levels.get("system", 0.0)
+        line = f"\rMIC {_level_bar(mic, width)} {mic:0.4f}  SYS {_level_bar(system, width)} {system:0.4f}"
+        sys.stdout.write(line)
+        sys.stdout.flush()
+
+    return render
+
+
+def _level_bar(rms: float, width: int) -> str:
+    scaled = min(width, max(0, int(rms * 250)))
+    return "[" + ("#" * scaled).ljust(width, ".") + "]"
+
+
 def _configured_language(value: str) -> Language:
     try:
         return Language(value)
@@ -290,6 +312,18 @@ def doctor() -> None:
         failed = failed or check.status == "missing"
     if failed:
         raise typer.Exit(1)
+
+
+@app.command()
+def ui(
+    host: Annotated[str, typer.Option("--host", help="Host for the local web UI.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Port for the local web UI.")] = 8765,
+) -> None:
+    """Start the local Manola web UI."""
+    try:
+        run_ui_server(host=host, port=port)
+    except OSError as exc:
+        _fail(f"Could not start Manola UI on {host}:{port}: {exc}")
 
 
 @app.command("devices")
@@ -723,6 +757,8 @@ def meet(
     llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate report with remote LLM. Uses default_generate_llm_report from config when omitted.")] = None,
     enrich: Annotated[bool, typer.Option("--enrich/--no-enrich", help="Generate metadata suggestions after transcription when LLM is enabled.")] = True,
     live_transcript: Annotated[bool, typer.Option("--live-transcript/--no-live-transcript", help="Show and persist preview transcript chunks while recording.")] = True,
+    levels: Annotated[bool, typer.Option("--levels/--no-levels", help="Show live mic/system audio input levels while recording.")] = True,
+    auto_speaker: Annotated[bool, typer.Option("--auto-speaker/--no-auto-speaker", help="Probe loopback inputs and choose the one with active system audio, ignoring saved speaker defaults.")] = False,
 ) -> None:
     """Record, transcribe, summarize, and optionally export a meeting with defaults."""
     config = load_config()
@@ -732,9 +768,13 @@ def meet(
         effective_llm_profile = llm_profile or config.default_llm_profile
         effective_llm = _effective_llm(llm, config.default_generate_llm_report)
         effective_mic_index = mic_index if mic_index is not None else (None if mic else config.default_mic_index)
-        effective_speaker_index = speaker_index if speaker_index is not None else (None if speaker else config.default_speaker_index)
+        effective_speaker_index = (
+            speaker_index
+            if speaker_index is not None
+            else (None if speaker or auto_speaker else config.default_speaker_index)
+        )
         created_at = datetime.now()
-        resolved_title = title or f"Recording {created_at:%H:%M}"
+        resolved_title = title or generic_recording_title(created_at)
         expected_meeting_dir = (
             proposed_archive_parent(config.workspace_dir, project, meeting_type)
             / meeting_folder_name(
@@ -748,6 +788,8 @@ def meet(
         typer.echo(f"- source: meeting (microphone + system audio)")
         mic_label = f"#{effective_mic_index}" if effective_mic_index is not None else mic or report.default_microphone or "default"
         speaker_label = f"#{effective_speaker_index}" if effective_speaker_index is not None else speaker or report.default_speaker or "default"
+        if auto_speaker and speaker is None and speaker_index is None:
+            speaker_label = "auto"
         typer.echo(f"- microphone: {mic_label}")
         typer.echo(f"- speaker/system audio: {speaker_label}")
         stop_rule = f"press '{stop_key}'"
@@ -768,6 +810,7 @@ def meet(
             )
         else:
             typer.echo("- live transcript: disabled")
+        typer.echo(f"- audio levels: {'enabled' if levels else 'disabled'}")
         typer.echo(f"- report: {'enabled' if effective_llm else 'disabled'} ({effective_llm_profile})")
         typer.echo(f"- enrichment: {'enabled' if effective_llm and enrich else 'disabled'}")
         _print_llm_privacy_notice(effective_llm, effective_llm_profile)
@@ -809,9 +852,12 @@ def meet(
             stop_key=stop_key,
             live_transcript=live_transcript,
             live_transcript_preview=_print_live_transcript_preview if live_transcript else None,
+            audio_level=_audio_level_meter(levels),
             created_at=created_at,
             status=_status,
         )
+        if levels and sys.stdout.isatty():
+            typer.echo("")
         typer.echo(f"Created meeting: {meeting_dir}")
         if live_transcript:
             typer.echo(f"Wrote live transcript preview: {meeting_dir / 'live_transcript.md'}")
@@ -823,6 +869,14 @@ def meet(
             _status("Generating metadata suggestions...")
             suggestions_path = enrich_meeting(meeting_dir, config, status=_status)
             typer.echo(f"Wrote suggestions: {suggestions_path}")
+            if suggestions_path.exists():
+                suggestions = MetadataSuggestions.model_validate_json(
+                    suggestions_path.read_text(encoding="utf-8")
+                )
+                retitled_dir = apply_suggested_title(meeting_dir, config, suggestions, status=_status)
+                if retitled_dir != meeting_dir:
+                    meeting_dir = retitled_dir
+                    typer.echo(f"Renamed meeting: {meeting_dir}")
         if effective_llm:
             _status("Generating meeting report...")
             report_path = summarize_meeting(meeting_dir, config, status=_status)

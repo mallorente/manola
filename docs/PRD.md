@@ -527,8 +527,8 @@ Report generation uses a remote LLM through an OpenAI-compatible abstraction.
 Default profile:
 
 - `deepseek_fast`
-- Base URL: `https://opencode.ai/zen/go/v1`
-- Model: `deepseek-v4-flash`
+- Base URL: `https://openrouter.ai/api/v1`
+- Model: `deepseek/deepseek-v4-flash`
 - Thinking: disabled
 - Report temperature: `0.2`
 - Enrichment temperature: `0.0`
@@ -567,6 +567,20 @@ Secrets must never be stored in meeting metadata or shared folders.
 ## Post-MVP Roadmap
 
 These features are not required for the MVP, but they describe the direction Manola should grow after the core local-first workflow is reliable.
+
+Active planning is split into two dedicated PRDs:
+
+- `docs/PRD-UI-Functional-Completion.md` — making the web UI fully usable by a
+  non-technical user with no terminal (job API, wiring every action, recording
+  and import from the UI). Backed by `docs/ADR-0003-ui-job-model.md`.
+- `docs/PRD-Future-Vision.md` — the intelligence layer: auto-detection,
+  chat-with-meeting and cross-meeting chat, speaker identification, live
+  note-taking, context ingestion, and an organizational assistant.
+
+The roadmap sections below remain the long-form description of several of those
+directions (customizable prompts and transcript enrichment are already
+implemented; calendar-assisted naming, terminal browser, and automatic meeting
+detection are still future).
 
 ### Customizable Prompts
 

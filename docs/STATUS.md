@@ -1,10 +1,89 @@
 # Manola Status
 
-Last updated: 2026-05-12
+Last updated: 2026-06-18
 
 ## Current State
 
 Manola is a Python CLI managed with `uv` and Typer. The MVP workflow for imported audio and basic Windows recording is implemented.
+
+GUI scaffold added on 2026-06-17:
+
+- Added the first local web UI scaffold, launched with `uv run manola ui`.
+- The UI is served by `src/manola/ui_server.py` with static frontend assets in `src/manola/ui_static/`.
+- Published the design-completion PRD and AFK task set to GitHub Issues:
+  - PRD: https://github.com/mallorente/manola/issues/9
+  - Tasks: https://github.com/mallorente/manola/issues/10 through https://github.com/mallorente/manola/issues/24
+- Implemented the frontend shell from the Claude Design handoff direction: sidebar navigation, meeting archive, meeting detail tabs, import/record placeholders, devices, doctor, and settings.
+- Settings includes an app-language selector and highlight color picker. These UI-only preferences are stored in browser `localStorage`; they are not yet persisted in `~/.manola/config.toml`.
+- The UI reads existing meeting metadata, `transcript.md`, `report.md`, audio WAV durations, device diagnostics, and doctor checks through existing Manola functionality.
+- Archive rows are grouped by meeting date, show type/language/share/duration metadata with graceful fallbacks, and have an explicit selected-row state.
+- The report tab renders `report.md` as readable sections, shows generation context, warns on stale reports, and keeps regeneration as an explicit backend-gap action.
+- The transcript tab renders timestamped and speaker-labeled transcript rows, shows Whisper model/device/compute/language context, warns on truncated transcripts, and keeps retranscription as an explicit backend-gap action.
+- The audio tab lists source and normalized audio artifacts with duration, file, size, sample-rate/channel details, missing-artifact warnings, truncated-normalized warnings, and an explicit backend-gap repair action.
+- The metadata tab shows core metadata, attendees, model/profile details, metadata suggestions from `metadata.suggestions.json`, empty-value fallbacks, and read-only edit/apply/save affordances for missing write endpoints.
+- Settings clearly separates browser-local app language/highlight preferences from read-only Manola backend config, including workspace, transcription, LLM, sharing, prompts, and advanced config sections.
+- Devices and Doctor screens use real backend data with static readiness indicators, recommended CLI commands, and disabled rerun/test actions for missing browser job endpoints.
+- The Record screen is a complete inert workflow with meeting/capture defaults, static mic/system meters, live transcript placeholder, disabled start/stop/process actions, backend-gap messaging, and CLI recording commands.
+- The Import screen is a complete inert workflow with source and metadata controls, proposed Manola folder preview, copy/normalize/transcribe/summarize/export pipeline steps, disabled choose/process actions, backend-gap messaging, and CLI import/process commands.
+- Disabled enrich/export/repair/retranscribe/regenerate/apply actions now carry specific backend-gap explanations, show CLI alternatives where available, and metadata suggestions surface confidence/evidence detail when present.
+- Added health checks for truncated `audio/normalized.wav`, transcript shorter than audio, and stale reports.
+- Backend gaps intentionally not implemented yet: recording job API, browser import/file-picker processing API, async transcribe/summarize/export/repair jobs, and Google Recorder-specific import handling. See `docs/UI_PLAN.md`.
+- UI verification on 2026-06-17:
+  - UI/server subset passed in a separate Python 3.11 verification environment: `9 passed`.
+  - Full suite passed in the same environment: `98 passed`.
+- Python environment repair on 2026-06-18:
+  - Installed `uv`-managed CPython 3.11.15.
+  - Recreated `.venv` with `uv venv --python 3.11.15 --clear`.
+  - Reinstalled project and dev dependencies with `uv sync --extra dev`.
+  - Verified `uv run python --version`, `uv run manola --help`, the documented full test command, the UI/server test subset, and `uv run manola ui --host 127.0.0.1 --port 8765`.
+- UI design-completion verification on 2026-06-18:
+  - UI/server subset passed with `21 passed`.
+  - Full suite passed with `110 passed`.
+  - Current smoke command: `uv run manola ui --host 127.0.0.1 --port 8765`.
+  - Headless Edge smoke covered archive, selected meeting details, transcript/report/audio/metadata tabs, Record, Import, Settings, Devices, and Doctor screens. Devices rendered the backend error fallback plus CLI commands in the headless browser session.
+
+Roadmap planning published on 2026-06-18:
+
+- Converted the docs backlog + a new feature/bug list into GitHub Issues, organized into dependency-ordered batches with human-check gates (milestone per batch + tracking issue).
+- New planning docs: `docs/PRD-UI-Functional-Completion.md` (Batches 1–4), `docs/PRD-Future-Vision.md` (epics F1–F7), and `docs/ADR-0003-ui-job-model.md` (in-process job registry + polling, single-GPU queue, remote-LLM privacy gate).
+- GitHub structure:
+  - PRDs: #58 (UI Functional Completion), #59 (Intelligence / Future Vision).
+  - Milestones: `Batch 1 · Cosmetic & read-only`, `Batch 2 · Job-API keystone`, `Batch 3 · Wire actions`, `Batch 4 · Audio without a terminal`, `Batch 5 · Near-term capability`.
+  - Tracking issues (human-check gates): #53–#57.
+  - Implementation issues: #26–#45. Future epics: #46–#52.
+  - Only Batch 1 (#26–#29) carries `ready-for-agent`; later batches stay `needs-triage` until each gate opens. Tracking issues carry `ready-for-human`.
+- Gate workflow: run a batch → human check on its tracking issue → flip the next milestone's issues to `ready-for-agent`.
+
+Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
+
+- Issues #26–#29 (`docs/PRD-UI-Functional-Completion.md`, Batch 1). Frontend-only
+  except #29. No backend job API yet (that is Batch 2).
+- #26 Dark-mode audit: in `[data-theme="dark"]` the status colors `--good`,
+  `--warn`, `--bad` were only overridden for their backgrounds, so badge text
+  (status badges in archive rows, overview, audio, report, transcript, devices,
+  doctor) rendered dark-on-dark. Added legible dark foregrounds
+  (`#6cc08a`/`#e0b061`/`#e08a7f`), brightened the dimmest secondary text
+  (`--text-3` → `#837e74`) so timestamps/labels read clearly, and gave dark mode
+  a visible `--shadow` for panel separation.
+- #27 Settings gear: replaced the asymmetric hand-drawn gear path with a
+  symmetric (Lucide-style) gear so the `cx=12 cy=12 r=3` center circle is
+  concentric at the nav icon size.
+- #28 Selectable sorting: added a sort control to the archive list (date, title,
+  type, duration; ascending/descending). The choice persists in `localStorage`
+  (`manola.sortKey` / `manola.sortDir`). Meetings are sorted before day grouping,
+  so `groupMeetingsByDay` still renders correct day headers under every sort.
+- #29 Meaningful titles: `meet` now applies a high-confidence enrichment
+  `suggested_title` as the meeting title and folder topic via the new
+  `pipeline.apply_suggested_title`. It only acts when the meeting still carries
+  the generic `Recording HH:MM` fallback (the enrich prompt nulls the title when
+  evidence is weak), renames the folder through `naming.meeting_folder_name`, and
+  rewrites `metadata.json`. No extra LLM call. Retroactive re-titling of existing
+  meetings stays out of scope (Batch 3).
+- Verification: full suite `115 passed` (110 + 5 new pipeline/CLI/UI-asset
+  tests); `uv run manola ui --host 127.0.0.1 --port 8765` serves index, static
+  assets, and `/api/state` with `200`.
+- Gate: tracking issue #53. Awaiting human dark-mode eyeball pass before flipping
+  Batch 2 (#30–#31) to `ready-for-agent`.
 
 Security hardening added on 2026-05-12:
 
@@ -19,7 +98,7 @@ Working local configuration on the current machine:
 - Shared folder: `G:/Mi unidad/Proyectos/20260502_Legaltech/manola`
 - Default transcription backend: local `faster-whisper`
 - Default transcription device: CUDA
-- OpenRouter is configured through `OPENROUTER_API_KEY`
+- DeepSeek/Gemini report generation through OpenRouter is configured with `OPENROUTER_API_KEY`
 - CUDA runtime DLLs are provided by NVIDIA Python packages inside `.venv`
 
 ## Implemented Commands
@@ -28,6 +107,9 @@ Primary workflows:
 
 ```powershell
 uv run manola meet --language es
+uv run manola meet --language es --levels
+uv run manola meet --language es --no-levels
+uv run manola meet --language es --auto-speaker
 uv run manola meet --language es --no-enrich
 uv run manola meet --language es --no-live-transcript
 uv run manola process <audio-path> --language es --share all
@@ -38,6 +120,7 @@ uv run manola enrich <meeting-id-or-path>
 uv run manola export <meeting-id-or-path> --share all
 uv run manola record --duration 30 --source meeting --process --language es --share all
 uv run manola record --duration 30 --source meeting --live-transcript
+uv run manola ui
 ```
 
 Setup and diagnostics:
@@ -69,6 +152,8 @@ uv run manola record --mic-index 1 --speaker-index 3 --allow-partial
 - Imported `.m4a` audio can be normalized, transcribed, summarized with OpenRouter, and exported.
 - `record --source mic`, `record --source system`, and `record --source meeting` are backed by `soundcard`.
 - `meet` is the simple user-facing workflow: record meeting audio with defaults, pause writing silence after 10s of mic/system inactivity, stop with `q` or after 30s inactive, transcribe, generate metadata suggestions when LLM/enrichment are enabled, summarize, and export only if requested.
+- `meet` shows live microphone and system-audio level bars by default in an interactive terminal; use `--no-levels` to disable them.
+- Open-ended meeting capture can auto-probe available loopback devices and choose the loopback with active system audio. Use `--auto-speaker` to force probing even if a saved `default_speaker_index` exists.
 - `meet` shows confirmed preview transcript chunks by default and persists them to `live_transcript.md`; use `--no-live-transcript` to disable it. `record --source meeting --live-transcript` enables the same preview mode for the advanced recording command. The final `transcript.md` generated after recording remains canonical.
 - `audio enhance-test` creates `audio/enhanced.wav` with FFmpeg voice-focused filters and can write `transcript.baseline.md` plus `transcript.enhanced.md` for comparison.
 - `audio doctor` detects microphones, speakers, and loopbacks.
@@ -86,7 +171,7 @@ uv run manola record --mic-index 1 --speaker-index 3 --allow-partial
 - System loopback was verified with real audio playing:
   - `system` RMS: `0.006546`
   - `meeting` RMS: `0.005141`
-- Current test suite passes:
+- Current test suite passes in the repaired 2026-06-18 `.venv` environment:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path .tmp-pytest | Out-Null
@@ -96,11 +181,11 @@ $env:TEMP=$env:TMP
 uv run --extra dev python -m pytest --basetemp .tmp-pytest\run
 ```
 
-Latest observed result: `82 passed`.
+Latest observed result on 2026-06-18: `110 passed`.
 
 ## 2026-05-12 LLM Profile Update
 
-- `deepseek_fast` remains the default report profile and uses `deepseek-v4-flash` through OpenCode Go.
+- `deepseek_fast` remains the default report profile and uses `deepseek/deepseek-v4-flash` through OpenRouter.
 - Added `gemini_fast` for cheap/fast report generation using `google/gemini-2.5-flash-lite` through OpenRouter.
 - Added `sonnet_4_6` for premium report generation using `anthropic/claude-sonnet-4.6` through OpenRouter.
 - `openai_fallback` remains available through the OpenAI API.
@@ -108,7 +193,20 @@ Latest observed result: `82 passed`.
   - `deepseek_fast`: RTF-style prompts tuned for direct, concise output from DeepSeek V4 Flash.
   - `gemini_fast`: compact COSTAR prompts tuned for low-cost Flash-Lite summarization.
   - `sonnet_4_6`: RISEN/CREA prompts tuned for richer analysis from Claude Sonnet.
-- `deepseek_fast` smoke report generation through OpenCode was verified after the prompt update. The generated report recorded prompt source `src/manola/prompts/defaults/models/deepseek_fast/general.md`.
+- `deepseek_fast` report generation uses OpenRouter. The generated report records prompt source `src/manola/prompts/defaults/models/deepseek_fast/general.md`.
+
+## 2026-06-09 OpenRouter Default Update
+
+- `deepseek_fast` now uses OpenRouter by default:
+  - Base URL: `https://openrouter.ai/api/v1`
+  - Model: `deepseek/deepseek-v4-flash`
+  - Secret: `OPENROUTER_API_KEY`
+- The local user config at `C:/Users/Usuario/.manola/config.toml` was updated to the same provider/model.
+- Reprocessed latest meeting `C:/Users/Usuario/Nanola/Meetings/2026-06-09__general__recording-16-03`:
+  - Forced local CUDA transcription over 10 chunks.
+  - Regenerated `transcript.md`.
+  - Regenerated `report.md` with `LLM profile: deepseek_fast` and `LLM model: deepseek/deepseek-v4-flash`.
+  - Separate `enrich --force` was not rerun after policy review blocked sending the transcript again to an external LLM service.
 - LLM profiles now carry separate temperature controls:
   - `temperature` is used for `report.md` generation.
   - `enrichment_temperature` is used for `metadata.suggestions.json`.
@@ -169,12 +267,14 @@ audio/
 - Transcript and report now include the Whisper model/device/compute type used.
 - CLI preflight now makes LLM privacy explicit: report generation sends the transcript to the configured remote LLM profile unless `--no-llm` is used.
 - `meet` prints the selected defaults before recording: source, microphone, speaker/system audio, stop rule, optional max duration, language, Whisper model, device/compute, report profile, share policy, and local output paths.
+- `meet --levels/--no-levels` controls the live audio meter. The meter prints separate `MIC` and `SYS` RMS bars so the user can see whether microphone and meeting output are both being captured before relying on the final partial-capture check.
 - `meet --no-enrich` skips automatic `metadata.suggestions.json` generation while still allowing report generation.
 - `meet` creates `live_transcript.md` as preview-only output by default. It uses overlap windows and simple duplicate-line suppression, but reports and exports still use final `transcript.md`.
 - `meet` uses `default_language`, `default_llm_profile`, `default_mic_index`, and `default_speaker_index` from config unless the user overrides them with CLI flags.
 - `meet --duration <seconds>` is optional. Without it, recording runs until `--stop-key` is pressed or `--silence-timeout` seconds of mic/system inactivity are observed.
 - `meet --pause-after-silence <seconds>` controls pause/resume behavior. The default pauses after 10s inactive and resumes when mic/system audio returns; use `0` to disable pause/resume.
 - `record`, `meet`, and `audio test` accept explicit `--mic-index <n>` / `--speaker-index <n>` selectors, plus name-based `--mic "<name>"` / `--speaker "<name>"`.
+- If `meet` is started without an explicit speaker selector or saved speaker default, Manola probes loopback inputs briefly and auto-selects the one with the strongest signal. Explicit `--speaker` / `--speaker-index` take precedence; `--auto-speaker` ignores saved speaker defaults and forces probing.
 - `audio setup --save` writes `default_mic_index` and `default_speaker_index` to `~/.manola/config.toml` after the guided checks complete.
 - `record` remains for advanced/raw capture; `meet` is the normal user-facing command.
 - `record --source meeting` now fails if either microphone or system RMS appears silent, unless `--allow-partial` is supplied. The diagnostic WAV is kept at `audio/recorded.wav` when this happens.

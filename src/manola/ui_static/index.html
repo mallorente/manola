@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Manola</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-record" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="6"></circle>
+      </symbol>
+      <symbol id="icon-archive" viewBox="0 0 24 24">
+        <rect x="4" y="5" width="16" height="14" rx="2"></rect>
+        <path d="M8 9h8"></path>
+        <path d="M9 13h6"></path>
+      </symbol>
+      <symbol id="icon-alert" viewBox="0 0 24 24">
+        <path d="M12 8v5"></path>
+        <path d="M12 17h.01"></path>
+        <path d="M10.3 4.5 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.5a2 2 0 0 0-3.4 0Z"></path>
+      </symbol>
+      <symbol id="icon-import" viewBox="0 0 24 24">
+        <path d="M12 3v12"></path>
+        <path d="m7 10 5 5 5-5"></path>
+        <path d="M5 21h14"></path>
+      </symbol>
+      <symbol id="icon-devices" viewBox="0 0 24 24">
+        <path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z"></path>
+        <path d="M5 11a7 7 0 0 0 14 0"></path>
+        <path d="M12 18v3"></path>
+      </symbol>
+      <symbol id="icon-doctor" viewBox="0 0 24 24">
+        <path d="M12 5v14"></path>
+        <path d="M5 12h14"></path>
+        <rect x="4" y="4" width="16" height="16" rx="4"></rect>
+      </symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24">
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </symbol>
+      <symbol id="icon-theme" viewBox="0 0 24 24">
+        <path d="M12 3v2"></path>
+        <path d="M12 19v2"></path>
+        <path d="m4.9 4.9 1.4 1.4"></path>
+        <path d="m17.7 17.7 1.4 1.4"></path>
+        <path d="M3 12h2"></path>
+        <path d="M19 12h2"></path>
+        <path d="m4.9 19.1 1.4-1.4"></path>
+        <path d="m17.7 6.3 1.4-1.4"></path>
+        <circle cx="12" cy="12" r="4"></circle>
+      </symbol>
+    </svg>
+
+    <div id="app" class="app-shell" data-theme="light">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">m</div>
+          <div class="brand-name">manola</div>
+        </div>
+        <button id="recordButton" class="primary-action" type="button">
+          <svg class="icon" aria-hidden="true"><use href="#icon-record"></use></svg>
+          <span data-i18n="recordMeeting">Record meeting</span>
+        </button>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="library">Library</div>
+          <button class="nav-item active" data-view="archive" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-archive"></use></svg>
+            <span data-i18n="allMeetings">All meetings</span>
+            <span id="meetingCount" class="nav-count">0</span>
+          </button>
+          <button class="nav-item" data-view="attention" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
+            <span data-i18n="needsAttention">Needs attention</span>
+            <span id="attentionCount" class="nav-count">0</span>
+          </button>
+          <button class="nav-item" data-view="import" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-import"></use></svg>
+            <span data-i18n="importAudio">Import audio</span>
+          </button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="system">System</div>
+          <button class="nav-item" data-view="devices" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-devices"></use></svg>
+            <span data-i18n="devices">Devices</span>
+          </button>
+          <button class="nav-item" data-view="doctor" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-doctor"></use></svg>
+            <span data-i18n="doctor">Doctor</span>
+            <span id="doctorDot" class="status-dot warn"></span>
+          </button>
+          <button class="nav-item" data-view="settings" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+            <span data-i18n="settings">Settings</span>
+          </button>
+        </div>
+        <div class="sidebar-footer">
+          <button id="themeToggle" class="secondary-button small icon-button" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-theme"></use></svg>
+            <span data-i18n="toggleTheme">Toggle theme</span>
+          </button>
+          <div class="workspace-status">
+            <span class="status-dot ok"></span>
+            <span data-i18n="localWorkspace">Local workspace</span>
+          </div>
+          <div id="workspacePath" class="mono muted">...</div>
+        </div>
+      </aside>
+
+      <main id="main" class="main"></main>
+    </div>
+
+    <template id="archiveTemplate">
+      <section class="archive">
+        <div class="list-pane">
+          <header class="pane-header">
+            <div>
+              <h1 data-i18n="meetings">Meetings</h1>
+              <p id="archiveSummary" class="muted"></p>
+            </div>
+          </header>
+          <div class="search-box">
+            <span>Search</span>
+            <input id="meetingSearch" type="search" data-i18n-placeholder="searchMeetings" placeholder="Search meetings..." />
+          </div>
+          <div class="filters">
+            <button class="chip active" data-filter="all" type="button" data-i18n="all">All</button>
+            <button class="chip" data-filter="attention" type="button" data-i18n="needsAttention">Needs attention</button>
+            <button class="chip" data-filter="ready" type="button" data-i18n="ready">Ready</button>
+          </div>
+          <div class="sort-bar">
+            <label class="sort-label" for="meetingSort" data-i18n="sortBy">Sort by</label>
+            <select id="meetingSort" class="sort-select">
+              <option value="date" data-i18n="sortDate">Date</option>
+              <option value="title" data-i18n="sortTitle">Title</option>
+              <option value="type" data-i18n="sortType">Type</option>
+              <option value="duration" data-i18n="sortDuration">Duration</option>
+            </select>
+            <button id="meetingSortDir" class="secondary-button small" type="button"></button>
+          </div>
+          <div id="meetingList" class="meeting-list"></div>
+        </div>
+        <div id="detailPane" class="detail-pane"></div>
+      </section>
+    </template>
+
+    <template id="settingsTemplate">
+      <section class="page narrow">
+        <h1 data-i18n="settings">Settings</h1>
+        <div class="settings-section">
+          <h2 data-i18n="general">General</h2>
+          <p class="muted" data-i18n="generalSub">Application preferences stored in this browser.</p>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title" data-i18n="appLanguage">App language</div>
+              <div class="setting-sub" data-i18n="appLanguageSub">Changes interface labels only.</div>
+            </div>
+            <select id="appLanguage" class="control">
+              <option value="en">English</option>
+              <option value="es">Espanol</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title" data-i18n="highlightColor">Highlight color</div>
+              <div class="setting-sub" data-i18n="highlightColorSub">Used for primary actions and active states.</div>
+            </div>
+            <div class="color-row">
+              <input id="highlightColor" type="color" value="#3a6ae0" />
+              <button id="resetHighlight" class="secondary-button" type="button" data-i18n="reset">Reset</button>
+            </div>
+          </div>
+        </div>
+        <div id="settingsSections"></div>
+      </section>
+    </template>
+
+    <template id="simplePageTemplate">
+      <section class="page narrow">
+        <h1 id="simpleTitle"></h1>
+        <p id="simpleSub" class="muted"></p>
+        <div id="simpleContent"></div>
+      </section>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
