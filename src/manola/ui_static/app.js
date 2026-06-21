@@ -109,6 +109,10 @@ const I18N = {
     allowPartial: "Allow partial capture",
     allowPartialSub: "Keep the recording even if one channel is silent (e.g. in-person, no system audio). Uncheck to require both mic and system audio.",
     recordPreviewEmpty: "Live preview transcript appears here while recording. The final transcript is generated when you stop.",
+    importAccepts: "Accepts .m4a, .mp3, .wav, .mp4. The file is uploaded to the local server and imported.",
+    importTitlePlaceholder: "Defaults to the file name",
+    importReportNote: "Importing copies the audio, normalizes, and transcribes it. Generate the report from the meeting afterwards.",
+    importNoFile: "Choose an audio file first.",
     lowConfidenceConfirm: "This suggestion looks low confidence. Apply anyway?",
     noReport: "No report generated yet.",
     noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
@@ -226,6 +230,10 @@ const I18N = {
     allowPartial: "Permitir captura parcial",
     allowPartialSub: "Conserva la grabación aunque un canal esté en silencio (p. ej. presencial, sin audio de sistema). Desmárcalo para exigir micro y audio de sistema.",
     recordPreviewEmpty: "La transcripción en vivo aparece aquí mientras grabas. La transcripción final se genera al detener.",
+    importAccepts: "Acepta .m4a, .mp3, .wav, .mp4. El archivo se sube al servidor local y se importa.",
+    importTitlePlaceholder: "Por defecto, el nombre del archivo",
+    importReportNote: "Importar copia el audio, lo normaliza y lo transcribe. Genera el informe desde la reunión después.",
+    importNoFile: "Elige un archivo de audio primero.",
     lowConfidenceConfirm: "Esta sugerencia parece de baja confianza. ¿Aplicar de todos modos?",
     noReport: "Aun no hay informe generado.",
     noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
@@ -1067,41 +1075,73 @@ function renderDoctor() {
 function renderImport() {
   const config = state.data.config;
   renderSimple(t("importAudio"), t("importSub"), () => `
-    <div class="panel warn report-context">
-      <div>
-        <strong>${t("backendGap")}</strong>
-        <p class="muted">Browser import needs a file upload endpoint or desktop file-picker handoff before choose/process can run.</p>
-      </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("chooseAudio")}</button>
-    </div>
     <div class="grid-2">
       <div class="panel">
         <h2>Source</h2>
-        <div class="setting-row"><span>Audio file</span><div class="control readonly-value" aria-readonly="true">No file selected</div></div>
-        <div class="setting-row"><span>Transcript source</span><div class="control readonly-value" aria-readonly="true">Audio transcription</div></div>
-        <div class="setting-row"><span>Google Recorder</span><div class="control readonly-value" aria-readonly="true">Not connected</div></div>
+        <div class="setting-row"><span>${t("chooseAudio")}</span><input id="impFile" type="file" accept=".m4a,.mp3,.wav,.mp4,audio/*,video/mp4" class="control" /></div>
+        <p class="setting-sub">${t("importAccepts")}</p>
       </div>
       <div class="panel">
         <h2>Meeting metadata</h2>
-        <div class="setting-row"><span>Title</span><div class="control readonly-value" aria-readonly="true">Imported audio</div></div>
-        <div class="setting-row"><span>Language</span><div class="control readonly-value" aria-readonly="true">${escapeHtml(config.default_language || "auto")}</div></div>
-        <div class="setting-row"><span>Project</span><div class="control readonly-value" aria-readonly="true">none</div></div>
-        <div class="setting-row"><span>Share policy</span><div class="control readonly-value" aria-readonly="true">private</div></div>
+        <div class="setting-row"><span>Title</span><input id="impTitle" class="control" type="text" placeholder="${t("importTitlePlaceholder")}" /></div>
+        <div class="setting-row"><span>${t("transcriptLanguage")}</span><input id="impLanguage" class="control" type="text" value="${escapeHtml(config.default_language || "auto")}" /></div>
+        <div class="setting-row"><span>Type</span><select id="impType" class="control sort-select">${MEETING_TYPES.map((tp) => `<option value="${tp}">${escapeHtml(tp)}</option>`).join("")}</select></div>
+        <div class="setting-row"><span>${t("sharePolicy")}</span><select id="impShare" class="control sort-select">${SHARE_POLICIES.map((p) => `<option value="${p}">${escapeHtml(p)}</option>`).join("")}</select></div>
       </div>
     </div>
     <div class="panel">
-      <h2>Proposed folder</h2>
-      <div class="mono">Meetings/YYYY-MM-DD__general__imported-audio</div>
-    </div>
-    <div class="panel">
-      <h2>Pipeline</h2>
-      ${importPipelineRows()}
-      <div class="metadata-actions">
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("chooseAudio")}</button>
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("processImport")}</button>
+      <h2>${t("processImport")}</h2>
+      <p class="setting-sub">${t("importReportNote")}</p>
+      <div class="action-with-status">
+        <button class="secondary-button" id="impProcessBtn" type="button">${t("processImport")}</button>
+        <span class="job-mount" id="impStatus"></span>
       </div>
-    </div>
-    ${commandPanel("Import with CLI", ["uv run manola import <audio-path> --language en", "uv run manola process <audio-path> --language es --share all"])}`);
+    </div>`);
+  bindImport();
+}
+
+function bindImport() {
+  const btn = document.getElementById("impProcessBtn");
+  const fileInput = document.getElementById("impFile");
+  const mount = document.getElementById("impStatus");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      flashStatus(mount, false, t("importNoFile"));
+      return;
+    }
+    const params = new URLSearchParams({
+      filename: file.name,
+      title: document.getElementById("impTitle").value || "",
+      language: document.getElementById("impLanguage").value || "",
+      meeting_type: document.getElementById("impType").value,
+      share_policy: document.getElementById("impShare").value,
+    });
+    btn.disabled = true;
+    renderJobStatus(mount, { status: "starting" });
+    let job;
+    try {
+      job = await api(`/api/import?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+    } catch (err) {
+      renderJobStatus(mount, { status: "failed", error: err.message });
+      btn.disabled = false;
+      return;
+    }
+    await pollJob(job.id, mount, async (result) => {
+      state.data = await api("/api/state");
+      if (result && result.meeting) {
+        state.selectedPath = result.meeting;
+        state.view = "archive";
+      }
+      render();
+    });
+    btn.disabled = false;
+  });
 }
 
 function renderRecord() {

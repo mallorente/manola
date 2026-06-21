@@ -4,9 +4,11 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 import mimetypes
+import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 import wave
@@ -23,12 +25,19 @@ from .pipeline import (
     apply_metadata_suggestions,
     create_recorded_meeting,
     enrich_meeting,
+    import_recording,
     iter_meetings,
     repair_meeting,
     resolve_meeting,
     summarize_meeting,
     transcribe_meeting,
 )
+
+
+# Audio/video container types the UI import accepts (matches the CLI import).
+SUPPORTED_IMPORT_SUFFIXES: frozenset[str] = frozenset({".m4a", ".mp3", ".wav", ".mp4"})
+# Cap upload size defensively (2 GiB) so a bad request can't exhaust memory/disk.
+MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024
 
 
 STATIC_DIR = Path(__file__).with_name("ui_static")
@@ -164,6 +173,32 @@ def build_job_registry() -> JobRegistry:
         transcribe_meeting(meeting_dir, config, status=report, force=True)
         return {"meeting": str(meeting_dir)}
 
+    def import_audio(params: dict[str, Any], report) -> dict[str, Any]:
+        config = load_config()
+        audio_path = params.get("audio_path")
+        if not audio_path:
+            raise ValueError("Missing uploaded audio path for import job.")
+        source = Path(audio_path)
+        options = ProcessOptions(
+            audio_path=source,
+            meeting_type=MeetingType(params.get("meeting_type") or "general"),
+            project=(params.get("project") or None),
+            language=Language(params.get("language") or config.default_language),
+            title=(params.get("title") or None),
+            share_policy=SharePolicy(params.get("share_policy") or "private"),
+            transcription_backend=TranscriptionBackend(config.default_transcription_backend),
+            llm_profile=config.default_llm_profile,
+        )
+        try:
+            meeting_dir = import_recording(options, config, status=report)
+            transcribe_meeting(meeting_dir, config, status=report, force=True)
+        finally:
+            try:  # the imported copy lives in the meeting archive; drop the upload
+                source.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return {"meeting": str(meeting_dir)}
+
     return JobRegistry(
         {
             "transcribe": transcribe,
@@ -172,8 +207,9 @@ def build_job_registry() -> JobRegistry:
             "export": export,
             "repair": repair,
             "record": record,
+            "import": import_audio,
         },
-        gpu_actions=frozenset({"transcribe", "repair"}),
+        gpu_actions=frozenset({"transcribe", "repair", "import"}),
     )
 
 
@@ -274,6 +310,8 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
                 self._apply_metadata()
             elif parsed.path == "/api/recording/stop":
                 self._stop_recording()
+            elif parsed.path == "/api/import":
+                self._import_upload(parse_qs(parsed.query))
             else:
                 self._send_error(404, "Not found")
         except Exception as exc:  # pragma: no cover - defensive HTTP boundary
@@ -293,6 +331,61 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
             update_config_value(field, value)
         type(self).app_config = load_config()
         self._send_json(public_config(self.app_config))
+
+    def _import_upload(self, query: dict[str, list[str]]) -> None:
+        """Accept a raw audio upload, persist it, and start the import job.
+
+        The file bytes are the request body (no multipart parsing); metadata and
+        the original filename come from the query string. The extension is
+        validated against SUPPORTED_IMPORT_SUFFIXES before anything is written.
+        """
+        if self.job_registry is None:
+            self._send_error(503, "Job registry unavailable")
+            return
+        filename = (query.get("filename", [""])[0] or "").strip()
+        suffix = Path(filename).suffix.lower()
+        if suffix not in SUPPORTED_IMPORT_SUFFIXES:
+            self._send_error(
+                415,
+                f"Unsupported file type '{suffix or filename}'. Allowed: "
+                + ", ".join(sorted(SUPPORTED_IMPORT_SUFFIXES)),
+            )
+            return
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length <= 0:
+            self._send_error(400, "Empty upload")
+            return
+        if length > MAX_IMPORT_BYTES:
+            self._send_error(413, "Upload too large")
+            return
+
+        upload_dir = Path(tempfile.gettempdir()) / "manola-uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(suffix=suffix, dir=upload_dir)
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    remaining -= len(chunk)
+        except OSError as exc:
+            temp_path.unlink(missing_ok=True)
+            self._send_error(500, str(exc))
+            return
+
+        params = {
+            "audio_path": str(temp_path),
+            "title": (query.get("title", [""])[0] or "") or Path(filename).stem,
+            "language": query.get("language", [""])[0] or None,
+            "meeting_type": query.get("meeting_type", [""])[0] or None,
+            "share_policy": query.get("share_policy", [""])[0] or None,
+        }
+        job = self.job_registry.submit("import", params)
+        self._send_json(job.to_dict(), status=202)
 
     def _stop_recording(self) -> None:
         if self.job_registry is None:

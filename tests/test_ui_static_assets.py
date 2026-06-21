@@ -246,21 +246,21 @@ def test_record_screen_streams_live_meters_and_preview():
     assert ".static-meter span" in css
 
 
-def test_import_screen_is_complete_but_inert():
+def test_import_screen_uploads_and_processes_a_file():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert "function renderImport()" in js
-    assert "Browser import needs a file upload endpoint or desktop file-picker handoff" in js
+    assert "function bindImport()" in js
     assert 't("chooseAudio")' in js
     assert 't("processImport")' in js
-    assert "Meeting metadata" in js
-    assert "config.default_language" in js
-    assert "Share policy" in js
-    assert "Meetings/YYYY-MM-DD__general__imported-audio" in js
-    assert "function importPipelineRows()" in js
-    assert '"Copy original", "Normalize", "Transcribe", "Summarize", "Export"' in js
-    assert "uv run manola import <audio-path> --language en" in js
-    assert "uv run manola process <audio-path> --language es --share all" in js
+    assert 'id="impFile"' in js
+    assert 'accept=".m4a,.mp3,.wav,.mp4' in js
+    # Upload posts the raw file body to /api/import with metadata in the query.
+    assert "/api/import?" in js
+    assert "body: file" in js
+    assert 'id="impProcessBtn"' in js
+    # On completion the imported meeting is refreshed and selected.
+    assert "state.selectedPath = result.meeting" in js
 
 
 def test_reusable_job_component_wires_retranscribe():
