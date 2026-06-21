@@ -117,6 +117,7 @@ def build_job_registry() -> JobRegistry:
     def record(params: dict[str, Any], report) -> dict[str, Any]:
         config = load_config()
         stop_event = params.get("_stop_event")
+        live_update = params.get("_live_update")
         options = ProcessOptions(
             audio_path=Path("recording.wav"),  # placeholder; overwritten by the capture path
             meeting_type=MeetingType(params.get("meeting_type") or "general"),
@@ -128,6 +129,15 @@ def build_job_registry() -> JobRegistry:
             transcription_backend=TranscriptionBackend(config.default_transcription_backend),
             llm_profile=config.default_llm_profile,
         )
+        def on_level(levels: dict[str, float]) -> None:
+            if live_update is not None:
+                live_update(levels=levels)
+
+        def on_preview(text: str) -> None:
+            if live_update is not None:
+                live_update(preview_line=text)
+
+        want_live = bool(params.get("live_transcript", True))
         # soundcard's Media Foundation capture needs COM on this worker thread.
         com_initialized = _ensure_thread_com()
         try:
@@ -142,6 +152,9 @@ def build_job_registry() -> JobRegistry:
                 allow_partial=bool(params.get("allow_partial", True)),
                 silence_timeout_seconds=0,  # UI controls stop; no silence auto-stop
                 pause_after_silence_seconds=0,
+                live_transcript=want_live,
+                live_transcript_preview=on_preview if want_live else None,
+                audio_level=on_level,
                 stop_signal=stop_event,
                 status=report,
             )
@@ -240,6 +253,9 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
                     self._send_error(400, "Missing path")
                     return
                 self._send_json(read_meeting(Path(unquote(path)), self.app_config))
+            elif parsed.path == "/api/recording/live":
+                query = parse_qs(parsed.query)
+                self._send_live(query.get("job_id", [None])[0], int(query.get("since", ["0"])[0]))
             elif parsed.path.startswith("/api/jobs/"):
                 self._send_job(parsed.path.removeprefix("/api/jobs/").strip("/"))
             else:
@@ -323,6 +339,19 @@ class ManolaUiHandler(BaseHTTPRequestHandler):
             self._send_error(412, str(exc))
             return
         self._send_json(job.to_dict(), status=202)
+
+    def _send_live(self, job_id: str | None, since: int) -> None:
+        if self.job_registry is None:
+            self._send_error(503, "Job registry unavailable")
+            return
+        if not job_id:
+            self._send_error(400, "Missing job_id")
+            return
+        snapshot = self.job_registry.live_snapshot(job_id, since)
+        if snapshot is None:
+            self._send_error(404, "Job not found")
+            return
+        self._send_json(snapshot)
 
     def _send_job(self, job_id: str) -> None:
         if self.job_registry is None:

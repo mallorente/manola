@@ -49,6 +49,9 @@ class Job:
     result: Any = None
     error: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # Live channel for streaming-by-polling actions (recording): latest mic/system
+    # levels and accumulated preview transcript lines.
+    live: dict[str, Any] = field(default_factory=lambda: {"levels": None, "preview": []})
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -122,6 +125,21 @@ class JobRegistry:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def live_snapshot(self, job_id: str, since: int = 0) -> dict[str, Any] | None:
+        """Return latest levels and preview lines from index ``since`` for a job."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            preview = job.live["preview"]
+            return {
+                "status": job.status,
+                "levels": job.live["levels"],
+                "preview": preview[since:],
+                "preview_total": len(preview),
+                "error": job.error,
+            }
+
     def request_stop(self, job_id: str) -> bool:
         """Signal a cooperatively-stoppable job (e.g. recording) to stop.
 
@@ -166,7 +184,18 @@ class JobRegistry:
 
         with self._lock:
             stop_event = self._stops.get(job_id)
-        run_params = {**params, "_stop_event": stop_event}
+
+        def live_update(*, levels: Any = None, preview_line: str | None = None) -> None:
+            with self._lock:
+                job = self._jobs.get(job_id)
+                if job is None:
+                    return
+                if levels is not None:
+                    job.live["levels"] = levels
+                if preview_line:
+                    job.live["preview"].append(preview_line)
+
+        run_params = {**params, "_stop_event": stop_event, "_live_update": live_update}
 
         self._update(job_id, status="running")
         try:

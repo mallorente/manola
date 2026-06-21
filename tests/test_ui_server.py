@@ -326,6 +326,40 @@ def test_recording_stop_endpoint_signals_job():
         registry.close()
 
 
+def test_recording_live_endpoint_streams_levels_and_preview():
+    release = threading.Event()
+
+    def record_handler(params, report):
+        params["_live_update"](levels={"mic": 0.1, "system": 0.0})
+        params["_live_update"](preview_line="hi there")
+        release.wait(timeout=5)
+        return {"meeting": "done"}
+
+    registry = JobRegistry({"record": record_handler})
+    server, base = _serving_handler(registry)
+    try:
+        _status, job = _post(base, "record", {})
+        snap = None
+        for _ in range(50):
+            with urllib.request.urlopen(f"{base}/api/recording/live?job_id={job['id']}") as response:
+                snap = json.loads(response.read().decode("utf-8"))
+            if snap["preview_total"] >= 1:
+                break
+            time.sleep(0.02)
+        assert snap["levels"] == {"mic": 0.1, "system": 0.0}
+        assert snap["preview"] == ["hi there"]
+
+        try:
+            urllib.request.urlopen(f"{base}/api/recording/live?job_id=nope")
+            raise AssertionError("expected HTTP 404")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+    finally:
+        release.set()
+        server.shutdown()
+        registry.close()
+
+
 def test_build_job_registry_includes_record_action():
     registry = build_job_registry()
     try:

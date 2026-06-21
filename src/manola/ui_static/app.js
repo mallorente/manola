@@ -108,6 +108,7 @@ const I18N = {
     recordReportNote: "Stopping saves the meeting and transcribes it. Generate the report from the meeting afterwards.",
     allowPartial: "Allow partial capture",
     allowPartialSub: "Keep the recording even if one channel is silent (e.g. in-person, no system audio). Uncheck to require both mic and system audio.",
+    recordPreviewEmpty: "Live preview transcript appears here while recording. The final transcript is generated when you stop.",
     lowConfidenceConfirm: "This suggestion looks low confidence. Apply anyway?",
     noReport: "No report generated yet.",
     noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
@@ -224,6 +225,7 @@ const I18N = {
     recordReportNote: "Al detener se guarda la reunión y se transcribe. Genera el informe desde la reunión después.",
     allowPartial: "Permitir captura parcial",
     allowPartialSub: "Conserva la grabación aunque un canal esté en silencio (p. ej. presencial, sin audio de sistema). Desmárcalo para exigir micro y audio de sistema.",
+    recordPreviewEmpty: "La transcripción en vivo aparece aquí mientras grabas. La transcripción final se genera al detener.",
     lowConfidenceConfirm: "Esta sugerencia parece de baja confianza. ¿Aplicar de todos modos?",
     noReport: "Aun no hay informe generado.",
     noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
@@ -1133,8 +1135,58 @@ function renderRecord() {
         <button class="secondary-button" id="recStopBtn" type="button" ${recording ? "" : "disabled"}>${t("stopRecording")}</button>
         <span class="job-mount" id="recStatus"></span>
       </div>
+      <div class="meter-row"><span>MIC</span><div class="static-meter"><span id="recMeterMic" style="width:0%"></span></div></div>
+      <div class="meter-row"><span>SYS</span><div class="static-meter"><span id="recMeterSys" style="width:0%"></span></div></div>
+    </div>
+    <div class="panel">
+      <h2>${t("liveTranscript")}</h2>
+      <div id="recPreview" class="live-preview"><p class="muted">${t("recordPreviewEmpty")}</p></div>
     </div>`);
   bindRecord();
+}
+
+// Poll the lightweight recording-live endpoint (~400ms) for meters + preview.
+// This is the ADR-0003 streaming seam, scoped to recording, done as chunked
+// polling rather than SSE to keep the stdlib server and no build system.
+function startLivePolling(jobId) {
+  let since = 0;
+  const preview = document.getElementById("recPreview");
+  let cleared = false;
+  const setMeter = (id, rms) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    // RMS is roughly 0..0.3 for speech; scale to a readable bar.
+    const pct = Math.max(0, Math.min(100, Math.round((rms || 0) * 400)));
+    el.style.width = `${pct}%`;
+  };
+  const tick = async () => {
+    if (state.recordingJobId !== jobId) return;
+    let snap;
+    try {
+      snap = await api(`/api/recording/live?job_id=${jobId}&since=${since}`);
+    } catch {
+      return; // job may have ended; pollJob handles terminal state
+    }
+    if (snap.levels) {
+      setMeter("recMeterMic", snap.levels.mic);
+      setMeter("recMeterSys", snap.levels.system);
+    }
+    if (snap.preview && snap.preview.length && preview) {
+      if (!cleared) { preview.innerHTML = ""; cleared = true; }
+      snap.preview.forEach((line) => {
+        const div = document.createElement("div");
+        div.className = "transcript-line";
+        div.innerHTML = `<div>${escapeHtml(line)}</div>`;
+        preview.appendChild(div);
+      });
+      preview.scrollTop = preview.scrollHeight;
+    }
+    since = snap.preview_total ?? since;
+    if (state.recordingJobId === jobId && snap.status === "running") {
+      setTimeout(tick, 400);
+    }
+  };
+  tick();
 }
 
 function bindRecord() {
@@ -1160,6 +1212,7 @@ function bindRecord() {
       state.recordingJobId = job.id;
       startBtn.disabled = true;
       stopBtn.disabled = false;
+      startLivePolling(job.id);
       pollJob(job.id, mount, async (result) => {
         state.recordingJobId = null;
         state.data = await api("/api/state");

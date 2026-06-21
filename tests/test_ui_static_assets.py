@@ -230,6 +230,22 @@ def test_record_screen_starts_and_stops_recording():
     assert "state.selectedPath = result.meeting" in js
 
 
+def test_record_screen_streams_live_meters_and_preview():
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
+
+    # Live meters + preview poll the recording-live endpoint (ADR-0003 seam).
+    assert "function startLivePolling(jobId)" in js
+    assert "/api/recording/live?job_id=" in js
+    assert "startLivePolling(job.id)" in js
+    assert 'id="recMeterMic"' in js
+    assert 'id="recMeterSys"' in js
+    assert 'id="recPreview"' in js
+    assert "snap.preview_total" in js
+    assert ".live-preview" in css
+    assert ".static-meter span" in css
+
+
 def test_import_screen_is_complete_but_inert():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
