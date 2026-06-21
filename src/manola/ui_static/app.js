@@ -106,6 +106,8 @@ const I18N = {
     recordSub: "Record a meeting from the browser. Capture starts on the server.",
     recordLiveLater: "Live level meters and live transcript arrive in a later step.",
     recordReportNote: "Stopping saves the meeting and transcribes it. Generate the report from the meeting afterwards.",
+    allowPartial: "Allow partial capture",
+    allowPartialSub: "Keep the recording even if one channel is silent (e.g. in-person, no system audio). Uncheck to require both mic and system audio.",
     lowConfidenceConfirm: "This suggestion looks low confidence. Apply anyway?",
     noReport: "No report generated yet.",
     noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
@@ -220,6 +222,8 @@ const I18N = {
     recordSub: "Graba una reunión desde el navegador. La captura ocurre en el servidor.",
     recordLiveLater: "Los medidores de nivel y la transcripción en vivo llegan en un paso posterior.",
     recordReportNote: "Al detener se guarda la reunión y se transcribe. Genera el informe desde la reunión después.",
+    allowPartial: "Permitir captura parcial",
+    allowPartialSub: "Conserva la grabación aunque un canal esté en silencio (p. ej. presencial, sin audio de sistema). Desmárcalo para exigir micro y audio de sistema.",
     lowConfidenceConfirm: "Esta sugerencia parece de baja confianza. ¿Aplicar de todos modos?",
     noReport: "Aun no hay informe generado.",
     noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
@@ -1116,6 +1120,8 @@ function renderRecord() {
         <h2>Capture</h2>
         <div class="setting-row"><span>${t("microphone")}</span><strong>${escapeHtml(String(micLabel))}</strong></div>
         <div class="setting-row"><span>${t("speakerLoopback")}</span><strong>${escapeHtml(String(spkLabel))}</strong></div>
+        <div class="setting-row"><label for="recAllowPartial">${t("allowPartial")}</label><input id="recAllowPartial" type="checkbox" checked ${recording ? "disabled" : ""} /></div>
+        <p class="setting-sub">${t("allowPartialSub")}</p>
         <p class="setting-sub">${t("recordLiveLater")}</p>
       </div>
     </div>
@@ -1142,6 +1148,7 @@ function bindRecord() {
         language: document.getElementById("recLanguage").value || undefined,
         meeting_type: document.getElementById("recType").value,
         share_policy: document.getElementById("recShare").value,
+        allow_partial: document.getElementById("recAllowPartial").checked,
       };
       let job;
       try {

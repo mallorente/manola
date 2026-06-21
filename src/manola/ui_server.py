@@ -139,6 +139,7 @@ def build_job_registry() -> JobRegistry:
                 duration_seconds=None,
                 mic_index=config.default_mic_index,
                 speaker_index=config.default_speaker_index,
+                allow_partial=bool(params.get("allow_partial", True)),
                 silence_timeout_seconds=0,  # UI controls stop; no silence auto-stop
                 pause_after_silence_seconds=0,
                 stop_signal=stop_event,
