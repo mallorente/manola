@@ -763,15 +763,9 @@ def format_duration(seconds: float | None) -> str:
 
 
 def backend_gaps() -> list[dict[str, str]]:
+    # Record, import, and the long-running job actions are all wired now
+    # (Batches 2-4). Only genuinely UI-local preferences remain.
     return [
-        {
-            "area": "recording",
-            "gap": "The CLI recording flow is blocking and stop-key driven. The UI needs a job API for start/stop/progress/live levels before Record meeting can be wired.",
-        },
-        {
-            "area": "import",
-            "gap": "The CLI imports local paths. Browser upload or desktop file-picker handoff needs a backend endpoint before Import audio and Google Recorder import can process files.",
-        },
         {
             "area": "app preferences",
             "gap": "App language and highlight color are UI preferences stored in browser localStorage; they are not part of ~/.manola/config.toml.",

@@ -543,10 +543,6 @@ h2 {
   margin-top: 14px;
 }
 
-.command-panel .setting-row {
-  align-items: flex-start;
-}
-
 .meter-row {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
@@ -744,12 +740,7 @@ h2 {
   color: var(--text-2);
 }
 
-.disabled-action {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.secondary-button:not(.disabled-action):hover {
+.secondary-button:hover:not(:disabled) {
   border-color: var(--accent-border);
   color: var(--accent);
 }

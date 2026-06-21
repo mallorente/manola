@@ -75,10 +75,7 @@ const I18N = {
     computeType: "Compute type",
     doctorSub: "Dependency and configuration checks from Manola.",
     devicesSub: "Detected microphones and system audio devices.",
-    importSub: "Import UI is designed; processing needs a backend job API.",
-    backendGap: "Backend gap",
-    unavailable: "Unavailable in this UI",
-    copyCommand: "Copy CLI command",
+    importSub: "Upload an audio file and Manola imports and transcribes it.",
     regenerateReport: "Regenerate report",
     retranscribe: "Retranscribe",
     jobStarting: "Starting…",
@@ -113,29 +110,25 @@ const I18N = {
     importTitlePlaceholder: "Defaults to the file name",
     importReportNote: "Importing copies the audio, normalizes, and transcribes it. Generate the report from the meeting afterwards.",
     importNoFile: "Choose an audio file first.",
+    repairHint: "Use Repair audio (Audio tab or Actions panel) to re-normalize and re-transcribe.",
+    retranscribeHint: "Use Retranscribe (Transcript tab or Actions panel) to regenerate the transcript.",
     lowConfidenceConfirm: "This suggestion looks low confidence. Apply anyway?",
     noReport: "No report generated yet.",
-    noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
+    noReportSub: "Use Regenerate report (or the Actions panel) to generate it.",
     noTranscript: "No transcript generated yet.",
-    noTranscriptSub: "Use `uv run manola transcribe <meeting-id-or-path>` from the CLI until the UI has an async transcription job API.",
+    noTranscriptSub: "Use Retranscribe (or the Actions panel) to generate it.",
     repairAudio: "Repair audio",
     sourceAudio: "Source audio",
     normalizedAudio: "Normalized audio",
     missingAudio: "Expected audio artifact is missing.",
-    runCli: "Run in CLI",
     startRecording: "Start recording",
     stopRecording: "Stop recording",
-    processRecording: "Process recording",
     chooseAudio: "Choose audio",
     processImport: "Process import",
-    exportMeeting: "Export",
     enrichMetadata: "Enrich metadata",
     liveTranscript: "Live transcript",
-    testDevices: "Test devices",
     rerunDoctor: "Rerun doctor",
-    saveMetadata: "Save metadata",
-    applySuggestions: "Apply suggestions",
-    metadataReadonly: "Metadata editing is read-only until write endpoints exist.",
+    metadataReadonly: "Review and apply LLM suggestions below.",
     noSuggestions: "No metadata suggestions found.",
     reportStale: "Report may be outdated. Transcript changed after this report.",
     noMeeting: "Select a meeting to inspect transcript, report, audio, and metadata.",
@@ -196,10 +189,7 @@ const I18N = {
     computeType: "Tipo de cómputo",
     doctorSub: "Comprobaciones de dependencias y configuración de Manola.",
     devicesSub: "Micrófonos y dispositivos de audio detectados.",
-    importSub: "La UI de importación está diseñada; procesar requiere una API de trabajos backend.",
-    backendGap: "Gap de backend",
-    unavailable: "No disponible en esta UI",
-    copyCommand: "Copiar comando CLI",
+    importSub: "Sube un archivo de audio y Manola lo importa y transcribe.",
     regenerateReport: "Regenerar informe",
     retranscribe: "Retranscribir",
     jobStarting: "Iniciando…",
@@ -234,29 +224,25 @@ const I18N = {
     importTitlePlaceholder: "Por defecto, el nombre del archivo",
     importReportNote: "Importar copia el audio, lo normaliza y lo transcribe. Genera el informe desde la reunión después.",
     importNoFile: "Elige un archivo de audio primero.",
+    repairHint: "Usa Reparar audio (pestaña Audio o panel de Acciones) para re-normalizar y re-transcribir.",
+    retranscribeHint: "Usa Retranscribir (pestaña Transcripción o panel de Acciones) para regenerar la transcripción.",
     lowConfidenceConfirm: "Esta sugerencia parece de baja confianza. ¿Aplicar de todos modos?",
     noReport: "Aun no hay informe generado.",
-    noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
+    noReportSub: "Usa Regenerar informe (o el panel de Acciones) para generarlo.",
     noTranscript: "Aun no hay transcripcion generada.",
-    noTranscriptSub: "Usa `uv run manola transcribe <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona de transcripcion.",
+    noTranscriptSub: "Usa Retranscribir (o el panel de Acciones) para generarlo.",
     repairAudio: "Reparar audio",
     sourceAudio: "Audio fuente",
     normalizedAudio: "Audio normalizado",
     missingAudio: "Falta un artefacto de audio esperado.",
-    runCli: "Ejecutar en CLI",
     startRecording: "Iniciar grabacion",
     stopRecording: "Detener grabacion",
-    processRecording: "Procesar grabacion",
     chooseAudio: "Elegir audio",
     processImport: "Procesar importacion",
-    exportMeeting: "Exportar",
     enrichMetadata: "Enriquecer metadatos",
     liveTranscript: "Transcripcion en vivo",
-    testDevices: "Probar dispositivos",
     rerunDoctor: "Reejecutar doctor",
-    saveMetadata: "Guardar metadatos",
-    applySuggestions: "Aplicar sugerencias",
-    metadataReadonly: "La edicion de metadatos es de solo lectura hasta que existan endpoints de escritura.",
+    metadataReadonly: "Revisa y aplica las sugerencias del LLM abajo.",
     noSuggestions: "No hay sugerencias de metadatos.",
     reportStale: "El informe puede estar obsoleto. La transcripción cambió después del informe.",
     noMeeting: "Selecciona una reunión para inspeccionar transcripción, informe, audio y metadatos.",
@@ -636,7 +622,7 @@ function renderDetail() {
 
 function renderOverview(body, m) {
   body.innerHTML = `
-    ${m.health.level === "ok" ? "" : `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p>${gapButton("repairBackend")}</div>`}
+    ${m.health.level === "ok" ? "" : `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p><p class="setting-sub">${t("repairHint")}</p></div>`}
     <div class="grid-2">
       ${metric("Status", m.health.level === "ok" ? t("healthOk") : t("healthWarn"))}
       ${metric("Duration", m.duration_label || "?")}
@@ -698,7 +684,7 @@ function bindActionsPanel(m) {
 function renderTranscript(body, m) {
   const lines = parseTranscript(m.transcript_text);
   body.innerHTML = `
-    ${m.health.transcript_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p>${gapButton("transcribeBackend")}</div>` : ""}
+    ${m.health.transcript_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p><p class="setting-sub">${t("retranscribeHint")}</p></div>` : ""}
     <div class="panel report-context">
       <div>
         <strong>transcript.md</strong>
@@ -765,7 +751,7 @@ function renderReport(body, m) {
 
 function renderAudio(body, m) {
   body.innerHTML = `
-    ${m.health.normalized_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p>${gapButton("repairBackend")}</div>` : ""}
+    ${m.health.normalized_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p><p class="setting-sub">${t("repairHint")}</p></div>` : ""}
     <div class="grid-2">
       ${metric("Original", `${m.audio.original?.duration_label || "?"} · ${m.audio.original?.name || ""}`)}
       ${metric("Normalized", `${m.audio.normalized?.duration_label || "?"} · ${m.audio.normalized?.name || ""}`)}
@@ -1066,10 +1052,25 @@ function renderDoctor() {
           <span class="badge bad">${state.data.doctor.filter((c) => c.status === "error").length} error</span>
         </div>
       </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("rerunDoctor")}</button>
+      <div class="action-with-status">
+        <button class="secondary-button" id="rerunDoctorBtn" type="button">${t("rerunDoctor")}</button>
+        <span class="job-mount" id="doctorStatus"></span>
+      </div>
     </div>
-    ${state.data.doctor.map((c) => `<div class="panel"><span class="badge ${c.status === "ok" ? "good" : c.status === "warn" ? "warn" : "bad"}">${escapeHtml(c.status)}</span> <strong>${escapeHtml(c.name)}</strong><div class="mono muted">${escapeHtml(c.detail)}</div></div>`).join("")}
-    ${commandPanel("Doctor CLI checks", ["uv run manola doctor", "uv run manola audio doctor"])}`);
+    ${state.data.doctor.map((c) => `<div class="panel"><span class="badge ${c.status === "ok" ? "good" : c.status === "warn" ? "warn" : "bad"}">${escapeHtml(c.status)}</span> <strong>${escapeHtml(c.name)}</strong><div class="mono muted">${escapeHtml(c.detail)}</div></div>`).join("")}`);
+  const btn = document.getElementById("rerunDoctorBtn");
+  if (btn) {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        state.data = await api("/api/state");
+        render();
+      } catch (err) {
+        flashStatus(document.getElementById("doctorStatus"), false, err.message);
+        btn.disabled = false;
+      }
+    });
+  }
 }
 
 function renderImport() {
@@ -1363,46 +1364,8 @@ function pipelineRows(m) {
   return rows.map(([label, ok]) => `<div class="setting-row"><span class="status-dot ${ok ? "ok" : "warn"}"></span><span>${escapeHtml(label)}</span></div>`).join("");
 }
 
-function importPipelineRows() {
-  return ["Copy original", "Normalize", "Transcribe", "Summarize", "Export"].map((label) => `<div class="setting-row"><span class="status-dot warn"></span><span>${escapeHtml(label)}</span><span class="badge">pending</span></div>`).join("");
-}
-
 function deviceList(title, devices, defaultName) {
   return `<div class="panel"><h2>${escapeHtml(title)}</h2>${(devices || []).map((d, i) => `<div class="setting-row"><span class="status-dot ok"></span><span class="mono muted">${i + 1}</span><span>${escapeHtml(d)}</span>${d === defaultName ? `<span class="badge good">default</span>` : `<span class="badge">detected</span>`}</div>`).join("") || "<p class='muted'>None detected.</p>"}</div>`;
-}
-
-function commandPanel(title, commands) {
-  return `<div class="panel command-panel">
-    <div class="report-context">
-      <h2>${escapeHtml(title)}</h2>
-      ${disabledAction(t("runCli"), "jobBackend")}
-    </div>
-    ${commands.map((command) => `<div class="setting-row"><span class="mono">${escapeHtml(command)}</span></div>`).join("")}
-  </div>`;
-}
-
-function disabledAction(label, area) {
-  return `<button class="secondary-button disabled-action" type="button" title="${escapeHtml(backendGapDetail(area))}">${escapeHtml(label)}</button>`;
-}
-
-function gapBlock(text) {
-  return `<div class="panel warn"><strong>${t("backendGap")}</strong><p>${escapeHtml(text)}</p></div>`;
-}
-
-function gapButton(area) {
-  return disabledAction(t("unavailable"), area);
-}
-
-function backendGapDetail(area) {
-  const gaps = {
-    exportBackend: "Export needs an async backend job endpoint before the UI can run it.",
-    jobBackend: "This UI action needs a backend job endpoint before it can run.",
-    metadataBackend: "Metadata enrichment and apply/save need write endpoints before the UI can run them.",
-    repairBackend: "Audio repair needs a tracked backend repair job before the UI can run it.",
-    reportBackend: "Report regeneration needs an async summarize job before the UI can run it.",
-    transcribeBackend: "Retranscription needs an async transcription job before the UI can run it.",
-  };
-  return gaps[area] || "This action is unavailable until the backend API exists.";
 }
 
 function renderMarkdownSections(text) {

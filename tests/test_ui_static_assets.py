@@ -202,12 +202,12 @@ def test_devices_tab_selects_and_saves_capture_devices():
     assert "default_mic_index" in js
     assert "default_speaker_index" in js
     assert 'apiPost("/api/config", { default_mic_index: mic, default_speaker_index: spk })' in js
-    # Doctor stays a read-only CLI surface (out of Batch 3 scope).
+    # Doctor re-run refreshes state in-UI; no CLI command panel remains.
     assert "function renderDoctor()" in js
     assert 't("rerunDoctor")' in js
-    assert "uv run manola doctor" in js
-    assert "function commandPanel(title, commands)" in js
-    assert ".command-panel" in css
+    assert 'id="rerunDoctorBtn"' in js
+    assert "uv run manola" not in js
+    assert "function commandPanel" not in js
     assert ".control-group" in css
 
 
@@ -261,6 +261,20 @@ def test_import_screen_uploads_and_processes_a_file():
     assert 'id="impProcessBtn"' in js
     # On completion the imported meeting is refreshed and selected.
     assert "state.selectedPath = result.meeting" in js
+
+
+def test_no_cli_escape_hatch_notices_remain():
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    # Batch 4 #41: no UI screen tells the user to run a terminal command, and the
+    # disabled-action / backend-gap scaffolding is gone.
+    assert "uv run manola" not in js
+    assert "disabled-action" not in js
+    assert "function disabledAction" not in js
+    assert "function gapButton" not in js
+    assert "function backendGapDetail" not in js
+    assert "function commandPanel" not in js
+    assert "Backend gap" not in js
 
 
 def test_reusable_job_component_wires_retranscribe():

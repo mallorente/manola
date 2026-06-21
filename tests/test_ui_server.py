@@ -409,6 +409,17 @@ def test_import_upload_persists_file_and_starts_job(tmp_path):
         registry.close()
 
 
+def test_backend_gaps_only_lists_open_gaps():
+    from manola.ui_server import backend_gaps
+
+    areas = {gap["area"] for gap in backend_gaps()}
+    # Record and import are wired now (Batches 2-4); only UI-local prefs remain.
+    assert "recording" not in areas
+    assert "import" not in areas
+    assert "long-running jobs" not in areas
+    assert areas == {"app preferences"}
+
+
 def test_build_job_registry_includes_record_action():
     registry = build_job_registry()
     try:
