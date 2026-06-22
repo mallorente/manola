@@ -56,6 +56,7 @@ class ProcessOptions(BaseModel):
     share_policy: SharePolicy = SharePolicy.private
     transcription_backend: TranscriptionBackend = TranscriptionBackend.local
     llm_profile: str = "deepseek_fast"
+    enhance_voice: str | None = None
 
 
 class MeetingMetadata(BaseModel):
@@ -74,6 +75,9 @@ class MeetingMetadata(BaseModel):
     llm_profile: str
     audio_original: str
     audio_normalized: str
+    audio_enhanced: str | None = None
+    enhancement_mode: str | None = None
+    diarized: bool = False
     transcript: str
     report: str
 

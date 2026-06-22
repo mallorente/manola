@@ -54,6 +54,58 @@ Roadmap planning published on 2026-06-18:
   - Only Batch 1 (#26–#29) carries `ready-for-agent`; later batches stay `needs-triage` until each gate opens. Tracking issues carry `ready-for-human`.
 - Gate workflow: run a batch → human check on its tracking issue → flip the next milestone's issues to `ready-for-agent`.
 
+Batch 5 (Near-term capability) started on 2026-06-22:
+
+- Batch 4 verified by the human gate (#56) and merged via PR #64; Batch 5 issues
+  #42–#45 flipped to `ready-for-agent`. Tracking issue #57.
+- #45 Old nested-folder migration: new `src/manola/migration.py` detects meetings
+  whose parent folder is not their canonical location (`proposed_archive_parent`
+  for the meeting's type/project) and relocates them to the simplified layout,
+  preserving the leaf folder name (and thus the recognizable id), resolving leaf
+  collisions with a `-2/-3` suffix, fixing `metadata.id`, and pruning emptied
+  legacy parent folders without ever removing the workspace root. Discovery was
+  already covered by `iter_meetings` (recursive `rglob`); this adds migration.
+  Exposed as `manola migrate` (preview) / `manola migrate --apply`.
+- #43 Voice enhancement modes: voice enhancement is now a real processing option,
+  not just the `audio enhance-test` comparison command. `ProcessOptions` carries
+  an `enhance_voice` mode (`off/light/denoise/speech`, added a `speech` FFmpeg
+  filter); `process` and `record --process` expose `--enhance-voice` (default from
+  the new `default_enhance_voice` config, `off`). `import_recording` and
+  `create_recorded_meeting` write `audio/enhanced.wav` next to (never overwriting)
+  `original`/`normalized`, and record `audio_enhanced` + `enhancement_mode` in
+  `metadata.json`. `transcribe_meeting` transcribes the enhanced audio when present
+  (falls back to normalized if missing); `repair_meeting` regenerates the enhanced
+  artifact after re-normalizing; `--share all` exports `enhanced.wav` when present.
+- #42 VAD pause/resume: new `src/manola/vad.py` wraps `webrtcvad`
+  (`webrtcvad-wheels`, optional with graceful RMS fallback) into a `SpeechDetector`
+  that splits each recording chunk into 30 ms frames and reports speech above a
+  voiced-frame ratio. `record_meeting_until_stopped` builds the detector
+  (`use_vad`/`vad_aggressiveness`) and folds it into the activity check
+  *additively*: VAD can only rescue quiet-but-present speech below the RMS floor,
+  never introduce a pause the RMS rule wouldn't already allow, so existing
+  pause/resume semantics are preserved with zero regression risk. Threaded through
+  `create_recorded_meeting`; `meet` and `record` expose `--vad/--no-vad` (default
+  from new `vad_pause_resume`/`vad_aggressiveness` config). Falls back to RMS-only
+  with a one-line notice when webrtcvad is unavailable.
+- #44 Speaker diarization: new `src/manola/diarization.py`. `pyannote.audio` is an
+  optional extra (`manola[diarization]`) needing a Hugging Face token; when the lib
+  or token is missing, or the pipeline errors, `diarize_audio` returns `None` and
+  the transcript is written without speaker labels — transcription always works.
+  The labeling core (`assign_speakers`) is a pure function: it parses
+  `[start-end] text` lines and prefixes each with the `Speaker N` whose turn
+  overlaps it most (raw pyannote labels relabeled stably by first appearance), so
+  it is fully testable without pyannote. Wired through `transcribe_meeting`
+  (`diarize` flag) and `process_recording`; `transcribe`/`process`/`meet`/`record`
+  expose `--diarize/--no-diarize` (default from new `diarization_enabled` config;
+  `diarization_model` + `huggingface_token_env` also configurable). A `diarized`
+  metadata flag records whether labels were applied.
+- Verification: full suite **178 passed** (+6 migration, +16 enhancement, +8 VAD,
+  +12 diarization tests: overlap labeling, pass-through, stable relabeling,
+  missing-lib/missing-token/pipeline-error fallbacks, transcribe integration on/off,
+  config defaults).
+- Batch 5 implementation complete (#42–#45). Gate: tracking issue #57 (human check
+  per the manual checklist) before closing.
+
 Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
 
 - Issues #26–#29 (`docs/PRD-UI-Functional-Completion.md`, Batch 1). Frontend-only
@@ -186,12 +238,19 @@ uv run manola meet --language es --no-levels
 uv run manola meet --language es --auto-speaker
 uv run manola meet --language es --no-enrich
 uv run manola meet --language es --no-live-transcript
+uv run manola meet --language es --vad
+uv run manola meet --language es --no-vad
 uv run manola process <audio-path> --language es --share all
+uv run manola process <audio-path> --language es --enhance-voice speech
 uv run manola import <audio-path> --language es --share all
+uv run manola record --source meeting --process --enhance-voice denoise
 uv run manola transcribe <meeting-id-or-path> --summarize --export
+uv run manola transcribe <meeting-id-or-path> --diarize
 uv run manola summarize <meeting-id-or-path> --export
 uv run manola enrich <meeting-id-or-path>
 uv run manola export <meeting-id-or-path> --share all
+uv run manola migrate
+uv run manola migrate --apply
 uv run manola record --duration 30 --source meeting --process --language es --share all
 uv run manola record --duration 30 --source meeting --live-transcript
 uv run manola ui
@@ -364,17 +423,23 @@ audio/
 - PRD includes a Post-MVP Roadmap for calendar-assisted naming, a terminal meeting browser/TUI, and automatic meeting detection.
 - `base` Whisper is too weak for faithful meeting transcripts. Prefer `large-v3` for quality or `turbo` for speed.
 - Name-based device selection matches names by exact case-insensitive match or substring; ambiguous matches fail and ask for a more specific name. Prefer indices from `manola devices` when names are duplicated.
-- Pause/resume is implemented with simple RMS thresholds. It does not yet use VAD or distinguish intentional silence from very quiet speakers.
+- Pause/resume uses voice-activity detection (webrtcvad) additively on top of the RMS thresholds, so quiet-but-present speech below the RMS floor is no longer mistaken for silence (Batch 5 #42, `--vad/--no-vad`). It still does not distinguish intentional silence from ambient noise above the RMS floor; that would need a speech-vs-noise gate rather than an additive rescue.
 - Live transcript is implemented as preview-quality chunk transcription with overlap and simple deduplication. It does not yet do VAD or live diarization.
-- Voice enhancement exists as an explicit comparison command, not as a default processing step.
-- No diarization yet.
+- Voice enhancement is a selectable processing step (`--enhance-voice off/light/denoise/speech` on `process` and `record --process`, or `default_enhance_voice` in config), in addition to the `audio enhance-test` comparison command. It is opt-in, not on by default (Batch 5 #43).
+- Optional speaker diarization labels transcript segments `Speaker 1/2/...` via
+  pyannote.audio (`manola[diarization]` extra + Hugging Face token, `--diarize`,
+  off by default; Batch 5 #44). Named speaker identification is still future
+  (PRD-Future-Vision F4). Without the extra/token the transcript is unlabeled.
 - There may be old meeting folders with the former verbose path layout:
 
 ```text
 Meetings/General/General/Meetings/...
 ```
 
-New meetings use the simplified layout directly under `Meetings/` unless a project is set.
+New meetings use the simplified layout directly under `Meetings/` unless a
+project is set. Old-layout meetings are still discoverable (`manola list` walks
+the workspace recursively) and can be relocated to the simplified layout with
+`manola migrate` (preview) / `manola migrate --apply` (Batch 5 #45).
 
 ## Recommended Next Steps
 

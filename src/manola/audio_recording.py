@@ -14,6 +14,8 @@ from typing import Callable
 import numpy as np
 
 from .errors import DependencyMissingError, ManolaError
+from .status import noop_status
+from .vad import build_speech_detector
 
 
 DEFAULT_SAMPLE_RATE = 48000
@@ -153,6 +155,8 @@ def record_meeting_until_stopped(
     pause_after_silence_seconds: int = 10,
     stop_key: str = "q",
     chunk_seconds: float = 1.0,
+    use_vad: bool = True,
+    vad_aggressiveness: int = 2,
     status: Callable[[str], None] | None = None,
     on_audio_chunk: Callable[[np.ndarray, int], None] | None = None,
     on_audio_level: Callable[[dict[str, float]], None] | None = None,
@@ -167,6 +171,9 @@ def record_meeting_until_stopped(
         raise ManolaError("Recording chunk duration must be greater than zero.")
 
     target.parent.mkdir(parents=True, exist_ok=True)
+    speech_detector = (
+        build_speech_detector(vad_aggressiveness, status=status or noop_status) if use_vad else None
+    )
     sc = _soundcard()
     microphone = _microphone(sc, mic_name, mic_index)
     loopback = _select_loopback(sc, speaker_name, speaker_index, sample_rate, status)
@@ -212,7 +219,18 @@ def record_meeting_until_stopped(
                     system_rms = rms_float(system_mono)
                     if on_audio_level is not None:
                         on_audio_level({"mic": mic_rms, "system": system_rms})
-                    active_audio = mic_rms > SILENCE_RMS_THRESHOLD or system_rms > SILENCE_RMS_THRESHOLD
+                    # VAD only adds activity: it rescues quiet-but-present speech
+                    # that falls below the RMS floor, and never introduces a pause
+                    # the RMS rule would not already allow.
+                    speech_detected = speech_detector is not None and (
+                        speech_detector.has_speech(mic_mono, sample_rate)
+                        or speech_detector.has_speech(system_mono, sample_rate)
+                    )
+                    active_audio = (
+                        speech_detected
+                        or mic_rms > SILENCE_RMS_THRESHOLD
+                        or system_rms > SILENCE_RMS_THRESHOLD
+                    )
                     pressed_keys = _pressed_keys()
                     stop_pressed = stop_key in pressed_keys
                     resume_pressed = bool(pressed_keys - {stop_key})
