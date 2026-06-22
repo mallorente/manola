@@ -21,6 +21,9 @@ dev = [
 ]
 local-transcription = [
 ]
+diarization = [
+    "pyannote.audio>=3.1",
+]
 
 [project.scripts]
 manola = "manola.cli:app"

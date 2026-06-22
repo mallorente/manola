@@ -87,10 +87,24 @@ Batch 5 (Near-term capability) started on 2026-06-22:
   `create_recorded_meeting`; `meet` and `record` expose `--vad/--no-vad` (default
   from new `vad_pause_resume`/`vad_aggressiveness` config). Falls back to RMS-only
   with a one-line notice when webrtcvad is unavailable.
-- Verification: full suite **166 passed** (+6 migration, +16 enhancement, +8 VAD
-  tests: voiced-ratio threshold, unsupported sample rate, short audio, detector
-  error, real-lib silence, missing-lib fallback, config defaults).
-- Remaining Batch 5 issue: #44 speaker diarization.
+- #44 Speaker diarization: new `src/manola/diarization.py`. `pyannote.audio` is an
+  optional extra (`manola[diarization]`) needing a Hugging Face token; when the lib
+  or token is missing, or the pipeline errors, `diarize_audio` returns `None` and
+  the transcript is written without speaker labels — transcription always works.
+  The labeling core (`assign_speakers`) is a pure function: it parses
+  `[start-end] text` lines and prefixes each with the `Speaker N` whose turn
+  overlaps it most (raw pyannote labels relabeled stably by first appearance), so
+  it is fully testable without pyannote. Wired through `transcribe_meeting`
+  (`diarize` flag) and `process_recording`; `transcribe`/`process`/`meet`/`record`
+  expose `--diarize/--no-diarize` (default from new `diarization_enabled` config;
+  `diarization_model` + `huggingface_token_env` also configurable). A `diarized`
+  metadata flag records whether labels were applied.
+- Verification: full suite **178 passed** (+6 migration, +16 enhancement, +8 VAD,
+  +12 diarization tests: overlap labeling, pass-through, stable relabeling,
+  missing-lib/missing-token/pipeline-error fallbacks, transcribe integration on/off,
+  config defaults).
+- Batch 5 implementation complete (#42–#45). Gate: tracking issue #57 (human check
+  per the manual checklist) before closing.
 
 Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
 
@@ -231,6 +245,7 @@ uv run manola process <audio-path> --language es --enhance-voice speech
 uv run manola import <audio-path> --language es --share all
 uv run manola record --source meeting --process --enhance-voice denoise
 uv run manola transcribe <meeting-id-or-path> --summarize --export
+uv run manola transcribe <meeting-id-or-path> --diarize
 uv run manola summarize <meeting-id-or-path> --export
 uv run manola enrich <meeting-id-or-path>
 uv run manola export <meeting-id-or-path> --share all
@@ -411,7 +426,10 @@ audio/
 - Pause/resume uses voice-activity detection (webrtcvad) additively on top of the RMS thresholds, so quiet-but-present speech below the RMS floor is no longer mistaken for silence (Batch 5 #42, `--vad/--no-vad`). It still does not distinguish intentional silence from ambient noise above the RMS floor; that would need a speech-vs-noise gate rather than an additive rescue.
 - Live transcript is implemented as preview-quality chunk transcription with overlap and simple deduplication. It does not yet do VAD or live diarization.
 - Voice enhancement is a selectable processing step (`--enhance-voice off/light/denoise/speech` on `process` and `record --process`, or `default_enhance_voice` in config), in addition to the `audio enhance-test` comparison command. It is opt-in, not on by default (Batch 5 #43).
-- No diarization yet.
+- Optional speaker diarization labels transcript segments `Speaker 1/2/...` via
+  pyannote.audio (`manola[diarization]` extra + Hugging Face token, `--diarize`,
+  off by default; Batch 5 #44). Named speaker identification is still future
+  (PRD-Future-Vision F4). Without the extra/token the transcript is unlabeled.
 - There may be old meeting folders with the former verbose path layout:
 
 ```text

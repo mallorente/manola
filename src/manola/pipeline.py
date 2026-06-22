@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from .audio import copy_original, enhance_voice, normalize_audio, normalize_enhance_mode
+from .diarization import assign_speakers, diarize_audio
 from .audio_recording import AudioTestResult, record_meeting_until_stopped, record_wav
 from .config import AppConfig
 from .errors import ManolaError
@@ -257,10 +258,11 @@ def process_recording(
     config: AppConfig,
     *,
     generate_llm_report: bool,
+    diarize: bool = False,
     status: StatusCallback = noop_status,
 ) -> Path:
     meeting_dir = import_recording(options, config, status)
-    transcribe_meeting(meeting_dir, config, status)
+    transcribe_meeting(meeting_dir, config, status, diarize=diarize)
     if generate_llm_report:
         summarize_meeting(meeting_dir, config, status)
     return meeting_dir
@@ -296,6 +298,7 @@ def transcribe_meeting(
     *,
     force: bool = False,
     skip_existing: bool = True,
+    diarize: bool = False,
 ) -> Path:
     status(f"Loading meeting metadata from {meeting_dir}...")
     metadata_path = meeting_dir / "metadata.json"
@@ -340,6 +343,13 @@ def transcribe_meeting(
         config=config,
         status=status,
     )
+    diarized = False
+    if diarize:
+        turns = diarize_audio(source_audio, config, status=status)
+        if turns:
+            transcript = assign_speakers(transcript, turns)
+            diarized = True
+    metadata = metadata.model_copy(update={"diarized": diarized})
     status("Writing transcript.md...")
     transcript_path.write_text(_transcript_document(metadata, transcript), encoding="utf-8")
     metadata_path.write_text(

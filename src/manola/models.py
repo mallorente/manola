@@ -77,6 +77,7 @@ class MeetingMetadata(BaseModel):
     audio_normalized: str
     audio_enhanced: str | None = None
     enhancement_mode: str | None = None
+    diarized: bool = False
     transcript: str
     report: str
 

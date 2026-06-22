@@ -240,6 +240,7 @@ def process(
     llm_profile: Annotated[str, typer.Option("--llm-profile")] = "deepseek_fast",
     llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate a report with the configured remote LLM. Uses default_generate_llm_report from config when omitted.")] = None,
     enhance_voice: Annotated[str | None, typer.Option("--enhance-voice", help="Voice enhancement mode for transcription: off, light, denoise, or speech. Writes audio/enhanced.wav and never overwrites the original. Uses default_enhance_voice from config when omitted.")] = None,
+    diarize: Annotated[bool | None, typer.Option("--diarize/--no-diarize", help="Label transcript segments with Speaker 1/2/... (needs the diarization extra and a Hugging Face token). Uses diarization_enabled from config when omitted.")] = None,
 ) -> None:
     """Process an existing recording into a transcript, report, and local archive."""
     config = load_config()
@@ -259,7 +260,13 @@ def process(
     try:
         _status("Starting process workflow...")
         _print_llm_privacy_notice(effective_llm, llm_profile)
-        meeting_dir = process_recording(options, config, generate_llm_report=effective_llm, status=_status)
+        meeting_dir = process_recording(
+            options,
+            config,
+            generate_llm_report=effective_llm,
+            diarize=diarize if diarize is not None else config.diarization_enabled,
+            status=_status,
+        )
         if share != SharePolicy.private:
             _status(f"Exporting with share policy {share.value}...")
             exported_dir = export_meeting(meeting_dir, config, share)
@@ -662,13 +669,21 @@ def transcribe(
         bool,
         typer.Option("--skip-existing/--no-skip-existing", help="Do not overwrite existing transcript/report unless --force is used."),
     ] = True,
+    diarize: Annotated[bool | None, typer.Option("--diarize/--no-diarize", help="Label transcript segments with Speaker 1/2/... (needs the diarization extra and a Hugging Face token). Uses diarization_enabled from config when omitted.")] = None,
 ) -> None:
     """Transcribe an imported meeting by id or path."""
     config = load_config()
     try:
         _status(f"Resolving meeting {meeting}...")
         meeting_dir = resolve_meeting(meeting, config)
-        transcript_path = transcribe_meeting(meeting_dir, config, status=_status, force=force, skip_existing=skip_existing)
+        transcript_path = transcribe_meeting(
+            meeting_dir,
+            config,
+            status=_status,
+            force=force,
+            skip_existing=skip_existing,
+            diarize=diarize if diarize is not None else config.diarization_enabled,
+        )
         if summarize_after:
             report_path = summarize_meeting(meeting_dir, config, status=_status, force=force, skip_existing=skip_existing)
         if export_after:
@@ -773,6 +788,7 @@ def meet(
     pause_after_silence: Annotated[int, typer.Option("--pause-after-silence", help="Pause writing silent audio after this many inactive seconds. Use 0 to disable pause/resume.")] = 10,
     stop_key: Annotated[str, typer.Option("--stop-key", help="Keyboard key that stops recording.")] = "q",
     vad: Annotated[bool | None, typer.Option("--vad/--no-vad", help="Use voice-activity detection so quiet speech is not mistaken for silence during pause/resume. Uses vad_pause_resume from config when omitted.")] = None,
+    diarize: Annotated[bool | None, typer.Option("--diarize/--no-diarize", help="Label transcript segments with Speaker 1/2/... (needs the diarization extra and a Hugging Face token). Uses diarization_enabled from config when omitted.")] = None,
     meeting_type: Annotated[MeetingType, typer.Option("--type", help="Report template / meeting type.")] = MeetingType.general,
     project: Annotated[str | None, typer.Option(help="Optional project folder under Meetings/Projects.")] = None,
     language: Annotated[Language | None, typer.Option(help="Transcription language. Prefer es/en when known. Uses default_language from config when omitted.")] = None,
@@ -891,7 +907,12 @@ def meet(
             typer.echo(f"Wrote live transcript preview: {meeting_dir / 'live_transcript.md'}")
         _print_recording_result("meeting", result)
         _status("Transcribing recorded meeting...")
-        transcript_path = transcribe_meeting(meeting_dir, config, status=_status)
+        transcript_path = transcribe_meeting(
+            meeting_dir,
+            config,
+            status=_status,
+            diarize=diarize if diarize is not None else config.diarization_enabled,
+        )
         typer.echo(f"Wrote transcript: {transcript_path}")
         if effective_llm and enrich:
             _status("Generating metadata suggestions...")
@@ -937,6 +958,7 @@ def record(
     live_transcript: Annotated[bool, typer.Option("--live-transcript/--no-live-transcript", help="Show and persist preview transcript chunks while recording meeting audio.")] = False,
     enhance_voice: Annotated[str | None, typer.Option("--enhance-voice", help="Voice enhancement mode used when --process transcribes: off, light, denoise, or speech. Writes audio/enhanced.wav and never overwrites the recording. Uses default_enhance_voice from config when omitted.")] = None,
     vad: Annotated[bool | None, typer.Option("--vad/--no-vad", help="Use voice-activity detection for pause/resume during open-ended meeting capture. Uses vad_pause_resume from config when omitted.")] = None,
+    diarize: Annotated[bool | None, typer.Option("--diarize/--no-diarize", help="Label transcript segments with Speaker 1/2/... when --process is used (needs the diarization extra and a Hugging Face token). Uses diarization_enabled from config when omitted.")] = None,
 ) -> None:
     """Advanced: record a raw WAV. Use `manola meet` for the normal meeting workflow."""
     config = load_config()
@@ -975,7 +997,12 @@ def record(
         _print_recording_result(source, result)
         if process_after:
             _status("Processing recorded audio...")
-            transcribe_meeting(meeting_dir, config, status=_status)
+            transcribe_meeting(
+                meeting_dir,
+                config,
+                status=_status,
+                diarize=diarize if diarize is not None else config.diarization_enabled,
+            )
             if effective_llm:
                 _print_llm_privacy_notice(True, None)
                 summarize_meeting(meeting_dir, config, status=_status)
