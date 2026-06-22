@@ -202,50 +202,79 @@ def test_devices_tab_selects_and_saves_capture_devices():
     assert "default_mic_index" in js
     assert "default_speaker_index" in js
     assert 'apiPost("/api/config", { default_mic_index: mic, default_speaker_index: spk })' in js
-    # Doctor stays a read-only CLI surface (out of Batch 3 scope).
+    # Doctor re-run refreshes state in-UI; no CLI command panel remains.
     assert "function renderDoctor()" in js
     assert 't("rerunDoctor")' in js
-    assert "uv run manola doctor" in js
-    assert "function commandPanel(title, commands)" in js
-    assert ".command-panel" in css
+    assert 'id="rerunDoctorBtn"' in js
+    assert "uv run manola" not in js
+    assert "function commandPanel" not in js
     assert ".control-group" in css
 
 
-def test_record_screen_is_complete_but_inert():
+def test_record_screen_starts_and_stops_recording():
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function renderRecord()" in js
+    assert "function bindRecord()" in js
+    # Start/stop drive the recording job + stop endpoint.
+    assert 'apiPost("/api/jobs/record"' in js
+    assert 'apiPost("/api/recording/stop", { job_id: state.recordingJobId })' in js
+    assert 't("startRecording")' in js
+    assert 't("stopRecording")' in js
+    assert 'id="recStartBtn"' in js
+    assert 'id="recStopBtn"' in js
+    assert "state.recordingJobId" in js
+    assert "MEETING_TYPES" in js
+    assert "config.default_mic_index" in js
+    # On completion the new meeting is refreshed and selected.
+    assert "state.selectedPath = result.meeting" in js
+
+
+def test_record_screen_streams_live_meters_and_preview():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     css = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
 
-    assert "function renderRecord()" in js
-    assert "Meeting defaults" in js
-    assert "Capture defaults" in js
-    assert "config.default_language" in js
-    assert "config.default_mic_index" in js
-    assert "config.default_speaker_index" in js
-    assert 't("liveTranscript")' in js
-    assert 't("startRecording")' in js
-    assert 't("stopRecording")' in js
-    assert 't("processRecording")' in js
-    assert "recording job API plus live level/transcript events" in js
-    assert "uv run manola meet --language en" in js
-    assert ".static-meter" in css
-    assert ".meter-row" in css
+    # Live meters + preview poll the recording-live endpoint (ADR-0003 seam).
+    assert "function startLivePolling(jobId)" in js
+    assert "/api/recording/live?job_id=" in js
+    assert "startLivePolling(job.id)" in js
+    assert 'id="recMeterMic"' in js
+    assert 'id="recMeterSys"' in js
+    assert 'id="recPreview"' in js
+    assert "snap.preview_total" in js
+    assert ".live-preview" in css
+    assert ".static-meter span" in css
 
 
-def test_import_screen_is_complete_but_inert():
+def test_import_screen_uploads_and_processes_a_file():
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert "function renderImport()" in js
-    assert "Browser import needs a file upload endpoint or desktop file-picker handoff" in js
+    assert "function bindImport()" in js
     assert 't("chooseAudio")' in js
     assert 't("processImport")' in js
-    assert "Meeting metadata" in js
-    assert "config.default_language" in js
-    assert "Share policy" in js
-    assert "Meetings/YYYY-MM-DD__general__imported-audio" in js
-    assert "function importPipelineRows()" in js
-    assert '"Copy original", "Normalize", "Transcribe", "Summarize", "Export"' in js
-    assert "uv run manola import <audio-path> --language en" in js
-    assert "uv run manola process <audio-path> --language es --share all" in js
+    assert 'id="impFile"' in js
+    assert 'accept=".m4a,.mp3,.wav,.mp4' in js
+    # Upload posts the raw file body to /api/import with metadata in the query.
+    assert "/api/import?" in js
+    assert "body: file" in js
+    assert 'id="impProcessBtn"' in js
+    # On completion the imported meeting is refreshed and selected.
+    assert "state.selectedPath = result.meeting" in js
+
+
+def test_no_cli_escape_hatch_notices_remain():
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    # Batch 4 #41: no UI screen tells the user to run a terminal command, and the
+    # disabled-action / backend-gap scaffolding is gone.
+    assert "uv run manola" not in js
+    assert "disabled-action" not in js
+    assert "function disabledAction" not in js
+    assert "function gapButton" not in js
+    assert "function backendGapDetail" not in js
+    assert "function commandPanel" not in js
+    assert "Backend gap" not in js
 
 
 def test_reusable_job_component_wires_retranscribe():

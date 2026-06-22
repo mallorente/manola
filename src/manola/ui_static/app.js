@@ -10,7 +10,16 @@ const state = {
   highlight: localStorage.getItem("manola.highlightColor") || "#3a6ae0",
   sortKey: localStorage.getItem("manola.sortKey") || "date",
   sortDir: localStorage.getItem("manola.sortDir") || "desc",
+  recordingJobId: null,
 };
+
+const MEETING_TYPES = [
+  "general", "sales_discovery", "sales_demo", "customer_success", "client_update",
+  "internal_sync", "one_on_one", "job_interview", "case_interview", "project_review",
+  "incident_postmortem", "brainstorm", "strategy", "workshop", "refinement",
+  "daily", "retro", "planning",
+];
+const SHARE_POLICIES = ["private", "report", "report_transcript", "all"];
 
 const I18N = {
   en: {
@@ -66,10 +75,7 @@ const I18N = {
     computeType: "Compute type",
     doctorSub: "Dependency and configuration checks from Manola.",
     devicesSub: "Detected microphones and system audio devices.",
-    importSub: "Import UI is designed; processing needs a backend job API.",
-    backendGap: "Backend gap",
-    unavailable: "Unavailable in this UI",
-    copyCommand: "Copy CLI command",
+    importSub: "Upload an audio file and Manola imports and transcribes it.",
     regenerateReport: "Regenerate report",
     retranscribe: "Retranscribe",
     jobStarting: "Starting…",
@@ -94,29 +100,35 @@ const I18N = {
     speakerLoopback: "Speaker / loopback",
     systemDefault: "System default",
     notConfigured: "Not configured",
+    recordSub: "Record a meeting from the browser. Capture starts on the server.",
+    recordLiveLater: "Live level meters and live transcript arrive in a later step.",
+    recordReportNote: "Stopping saves the meeting and transcribes it. Generate the report from the meeting afterwards.",
+    allowPartial: "Allow partial capture",
+    allowPartialSub: "Keep the recording even if one channel is silent (e.g. in-person, no system audio). Uncheck to require both mic and system audio.",
+    recordPreviewEmpty: "Live preview transcript appears here while recording. The final transcript is generated when you stop.",
+    importAccepts: "Accepts .m4a, .mp3, .wav, .mp4. The file is uploaded to the local server and imported.",
+    importTitlePlaceholder: "Defaults to the file name",
+    importReportNote: "Importing copies the audio, normalizes, and transcribes it. Generate the report from the meeting afterwards.",
+    importNoFile: "Choose an audio file first.",
+    repairHint: "Use Repair audio (Audio tab or Actions panel) to re-normalize and re-transcribe.",
+    retranscribeHint: "Use Retranscribe (Transcript tab or Actions panel) to regenerate the transcript.",
     lowConfidenceConfirm: "This suggestion looks low confidence. Apply anyway?",
     noReport: "No report generated yet.",
-    noReportSub: "Use `uv run manola summarize <meeting-id-or-path>` from the CLI until the UI has an async report job API.",
+    noReportSub: "Use Regenerate report (or the Actions panel) to generate it.",
     noTranscript: "No transcript generated yet.",
-    noTranscriptSub: "Use `uv run manola transcribe <meeting-id-or-path>` from the CLI until the UI has an async transcription job API.",
+    noTranscriptSub: "Use Retranscribe (or the Actions panel) to generate it.",
     repairAudio: "Repair audio",
     sourceAudio: "Source audio",
     normalizedAudio: "Normalized audio",
     missingAudio: "Expected audio artifact is missing.",
-    runCli: "Run in CLI",
     startRecording: "Start recording",
     stopRecording: "Stop recording",
-    processRecording: "Process recording",
     chooseAudio: "Choose audio",
     processImport: "Process import",
-    exportMeeting: "Export",
     enrichMetadata: "Enrich metadata",
     liveTranscript: "Live transcript",
-    testDevices: "Test devices",
     rerunDoctor: "Rerun doctor",
-    saveMetadata: "Save metadata",
-    applySuggestions: "Apply suggestions",
-    metadataReadonly: "Metadata editing is read-only until write endpoints exist.",
+    metadataReadonly: "Review and apply LLM suggestions below.",
     noSuggestions: "No metadata suggestions found.",
     reportStale: "Report may be outdated. Transcript changed after this report.",
     noMeeting: "Select a meeting to inspect transcript, report, audio, and metadata.",
@@ -177,10 +189,7 @@ const I18N = {
     computeType: "Tipo de cómputo",
     doctorSub: "Comprobaciones de dependencias y configuración de Manola.",
     devicesSub: "Micrófonos y dispositivos de audio detectados.",
-    importSub: "La UI de importación está diseñada; procesar requiere una API de trabajos backend.",
-    backendGap: "Gap de backend",
-    unavailable: "No disponible en esta UI",
-    copyCommand: "Copiar comando CLI",
+    importSub: "Sube un archivo de audio y Manola lo importa y transcribe.",
     regenerateReport: "Regenerar informe",
     retranscribe: "Retranscribir",
     jobStarting: "Iniciando…",
@@ -205,29 +214,35 @@ const I18N = {
     speakerLoopback: "Altavoz / loopback",
     systemDefault: "Predeterminado del sistema",
     notConfigured: "Sin configurar",
+    recordSub: "Graba una reunión desde el navegador. La captura ocurre en el servidor.",
+    recordLiveLater: "Los medidores de nivel y la transcripción en vivo llegan en un paso posterior.",
+    recordReportNote: "Al detener se guarda la reunión y se transcribe. Genera el informe desde la reunión después.",
+    allowPartial: "Permitir captura parcial",
+    allowPartialSub: "Conserva la grabación aunque un canal esté en silencio (p. ej. presencial, sin audio de sistema). Desmárcalo para exigir micro y audio de sistema.",
+    recordPreviewEmpty: "La transcripción en vivo aparece aquí mientras grabas. La transcripción final se genera al detener.",
+    importAccepts: "Acepta .m4a, .mp3, .wav, .mp4. El archivo se sube al servidor local y se importa.",
+    importTitlePlaceholder: "Por defecto, el nombre del archivo",
+    importReportNote: "Importar copia el audio, lo normaliza y lo transcribe. Genera el informe desde la reunión después.",
+    importNoFile: "Elige un archivo de audio primero.",
+    repairHint: "Usa Reparar audio (pestaña Audio o panel de Acciones) para re-normalizar y re-transcribir.",
+    retranscribeHint: "Usa Retranscribir (pestaña Transcripción o panel de Acciones) para regenerar la transcripción.",
     lowConfidenceConfirm: "Esta sugerencia parece de baja confianza. ¿Aplicar de todos modos?",
     noReport: "Aun no hay informe generado.",
-    noReportSub: "Usa `uv run manola summarize <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona para informes.",
+    noReportSub: "Usa Regenerar informe (o el panel de Acciones) para generarlo.",
     noTranscript: "Aun no hay transcripcion generada.",
-    noTranscriptSub: "Usa `uv run manola transcribe <meeting-id-or-path>` desde la CLI hasta que la interfaz tenga una API asincrona de transcripcion.",
+    noTranscriptSub: "Usa Retranscribir (o el panel de Acciones) para generarlo.",
     repairAudio: "Reparar audio",
     sourceAudio: "Audio fuente",
     normalizedAudio: "Audio normalizado",
     missingAudio: "Falta un artefacto de audio esperado.",
-    runCli: "Ejecutar en CLI",
     startRecording: "Iniciar grabacion",
     stopRecording: "Detener grabacion",
-    processRecording: "Procesar grabacion",
     chooseAudio: "Elegir audio",
     processImport: "Procesar importacion",
-    exportMeeting: "Exportar",
     enrichMetadata: "Enriquecer metadatos",
     liveTranscript: "Transcripcion en vivo",
-    testDevices: "Probar dispositivos",
     rerunDoctor: "Reejecutar doctor",
-    saveMetadata: "Guardar metadatos",
-    applySuggestions: "Aplicar sugerencias",
-    metadataReadonly: "La edicion de metadatos es de solo lectura hasta que existan endpoints de escritura.",
+    metadataReadonly: "Revisa y aplica las sugerencias del LLM abajo.",
     noSuggestions: "No hay sugerencias de metadatos.",
     reportStale: "El informe puede estar obsoleto. La transcripción cambió después del informe.",
     noMeeting: "Selecciona una reunión para inspeccionar transcripción, informe, audio y metadatos.",
@@ -607,7 +622,7 @@ function renderDetail() {
 
 function renderOverview(body, m) {
   body.innerHTML = `
-    ${m.health.level === "ok" ? "" : `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p>${gapButton("repairBackend")}</div>`}
+    ${m.health.level === "ok" ? "" : `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p><p class="setting-sub">${t("repairHint")}</p></div>`}
     <div class="grid-2">
       ${metric("Status", m.health.level === "ok" ? t("healthOk") : t("healthWarn"))}
       ${metric("Duration", m.duration_label || "?")}
@@ -669,7 +684,7 @@ function bindActionsPanel(m) {
 function renderTranscript(body, m) {
   const lines = parseTranscript(m.transcript_text);
   body.innerHTML = `
-    ${m.health.transcript_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p>${gapButton("transcribeBackend")}</div>` : ""}
+    ${m.health.transcript_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p><p class="setting-sub">${t("retranscribeHint")}</p></div>` : ""}
     <div class="panel report-context">
       <div>
         <strong>transcript.md</strong>
@@ -736,7 +751,7 @@ function renderReport(body, m) {
 
 function renderAudio(body, m) {
   body.innerHTML = `
-    ${m.health.normalized_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p>${gapButton("repairBackend")}</div>` : ""}
+    ${m.health.normalized_mismatch ? `<div class="panel warn"><strong>${escapeHtml(m.health.label)}</strong><p>${escapeHtml(m.health.detail)}</p><p class="setting-sub">${t("repairHint")}</p></div>` : ""}
     <div class="grid-2">
       ${metric("Original", `${m.audio.original?.duration_label || "?"} · ${m.audio.original?.name || ""}`)}
       ${metric("Normalized", `${m.audio.normalized?.duration_label || "?"} · ${m.audio.normalized?.name || ""}`)}
@@ -1037,88 +1052,230 @@ function renderDoctor() {
           <span class="badge bad">${state.data.doctor.filter((c) => c.status === "error").length} error</span>
         </div>
       </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("rerunDoctor")}</button>
+      <div class="action-with-status">
+        <button class="secondary-button" id="rerunDoctorBtn" type="button">${t("rerunDoctor")}</button>
+        <span class="job-mount" id="doctorStatus"></span>
+      </div>
     </div>
-    ${state.data.doctor.map((c) => `<div class="panel"><span class="badge ${c.status === "ok" ? "good" : c.status === "warn" ? "warn" : "bad"}">${escapeHtml(c.status)}</span> <strong>${escapeHtml(c.name)}</strong><div class="mono muted">${escapeHtml(c.detail)}</div></div>`).join("")}
-    ${commandPanel("Doctor CLI checks", ["uv run manola doctor", "uv run manola audio doctor"])}`);
+    ${state.data.doctor.map((c) => `<div class="panel"><span class="badge ${c.status === "ok" ? "good" : c.status === "warn" ? "warn" : "bad"}">${escapeHtml(c.status)}</span> <strong>${escapeHtml(c.name)}</strong><div class="mono muted">${escapeHtml(c.detail)}</div></div>`).join("")}`);
+  const btn = document.getElementById("rerunDoctorBtn");
+  if (btn) {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        state.data = await api("/api/state");
+        render();
+      } catch (err) {
+        flashStatus(document.getElementById("doctorStatus"), false, err.message);
+        btn.disabled = false;
+      }
+    });
+  }
 }
 
 function renderImport() {
   const config = state.data.config;
   renderSimple(t("importAudio"), t("importSub"), () => `
-    <div class="panel warn report-context">
-      <div>
-        <strong>${t("backendGap")}</strong>
-        <p class="muted">Browser import needs a file upload endpoint or desktop file-picker handoff before choose/process can run.</p>
-      </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("chooseAudio")}</button>
-    </div>
     <div class="grid-2">
       <div class="panel">
         <h2>Source</h2>
-        <div class="setting-row"><span>Audio file</span><div class="control readonly-value" aria-readonly="true">No file selected</div></div>
-        <div class="setting-row"><span>Transcript source</span><div class="control readonly-value" aria-readonly="true">Audio transcription</div></div>
-        <div class="setting-row"><span>Google Recorder</span><div class="control readonly-value" aria-readonly="true">Not connected</div></div>
+        <div class="setting-row"><span>${t("chooseAudio")}</span><input id="impFile" type="file" accept=".m4a,.mp3,.wav,.mp4,audio/*,video/mp4" class="control" /></div>
+        <p class="setting-sub">${t("importAccepts")}</p>
       </div>
       <div class="panel">
         <h2>Meeting metadata</h2>
-        <div class="setting-row"><span>Title</span><div class="control readonly-value" aria-readonly="true">Imported audio</div></div>
-        <div class="setting-row"><span>Language</span><div class="control readonly-value" aria-readonly="true">${escapeHtml(config.default_language || "auto")}</div></div>
-        <div class="setting-row"><span>Project</span><div class="control readonly-value" aria-readonly="true">none</div></div>
-        <div class="setting-row"><span>Share policy</span><div class="control readonly-value" aria-readonly="true">private</div></div>
+        <div class="setting-row"><span>Title</span><input id="impTitle" class="control" type="text" placeholder="${t("importTitlePlaceholder")}" /></div>
+        <div class="setting-row"><span>${t("transcriptLanguage")}</span><input id="impLanguage" class="control" type="text" value="${escapeHtml(config.default_language || "auto")}" /></div>
+        <div class="setting-row"><span>Type</span><select id="impType" class="control sort-select">${MEETING_TYPES.map((tp) => `<option value="${tp}">${escapeHtml(tp)}</option>`).join("")}</select></div>
+        <div class="setting-row"><span>${t("sharePolicy")}</span><select id="impShare" class="control sort-select">${SHARE_POLICIES.map((p) => `<option value="${p}">${escapeHtml(p)}</option>`).join("")}</select></div>
       </div>
     </div>
     <div class="panel">
-      <h2>Proposed folder</h2>
-      <div class="mono">Meetings/YYYY-MM-DD__general__imported-audio</div>
-    </div>
-    <div class="panel">
-      <h2>Pipeline</h2>
-      ${importPipelineRows()}
-      <div class="metadata-actions">
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("chooseAudio")}</button>
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("processImport")}</button>
+      <h2>${t("processImport")}</h2>
+      <p class="setting-sub">${t("importReportNote")}</p>
+      <div class="action-with-status">
+        <button class="secondary-button" id="impProcessBtn" type="button">${t("processImport")}</button>
+        <span class="job-mount" id="impStatus"></span>
       </div>
-    </div>
-    ${commandPanel("Import with CLI", ["uv run manola import <audio-path> --language en", "uv run manola process <audio-path> --language es --share all"])}`);
+    </div>`);
+  bindImport();
+}
+
+function bindImport() {
+  const btn = document.getElementById("impProcessBtn");
+  const fileInput = document.getElementById("impFile");
+  const mount = document.getElementById("impStatus");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      flashStatus(mount, false, t("importNoFile"));
+      return;
+    }
+    const params = new URLSearchParams({
+      filename: file.name,
+      title: document.getElementById("impTitle").value || "",
+      language: document.getElementById("impLanguage").value || "",
+      meeting_type: document.getElementById("impType").value,
+      share_policy: document.getElementById("impShare").value,
+    });
+    btn.disabled = true;
+    renderJobStatus(mount, { status: "starting" });
+    let job;
+    try {
+      job = await api(`/api/import?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+    } catch (err) {
+      renderJobStatus(mount, { status: "failed", error: err.message });
+      btn.disabled = false;
+      return;
+    }
+    await pollJob(job.id, mount, async (result) => {
+      state.data = await api("/api/state");
+      if (result && result.meeting) {
+        state.selectedPath = result.meeting;
+        state.view = "archive";
+      }
+      render();
+    });
+    btn.disabled = false;
+  });
 }
 
 function renderRecord() {
   const config = state.data.config;
-  renderSimple(t("recordMeeting"), "Desktop-class recording flow is designed, but not wired in v1.", () => `
-    <div class="panel warn report-context">
-      <div>
-        <strong>${t("backendGap")}</strong>
-        <p class="muted">Recording from the browser needs a controllable recording job API plus live level/transcript events.</p>
-      </div>
-      <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("startRecording")}</button>
-    </div>
+  const recording = !!state.recordingJobId;
+  const micLabel = config.default_mic_index ?? t("systemDefault");
+  const spkLabel = config.default_speaker_index ?? t("systemDefault");
+  renderSimple(t("recordMeeting"), t("recordSub"), () => `
     <div class="grid-2">
       <div class="panel">
-        <h2>Meeting defaults</h2>
-        <div class="setting-row"><span>Title</span><div class="control readonly-value" aria-readonly="true">New meeting</div></div>
-        <div class="setting-row"><span>Language</span><div class="control readonly-value" aria-readonly="true">${escapeHtml(config.default_language || "auto")}</div></div>
-        <div class="setting-row"><span>LLM profile</span><div class="control readonly-value" aria-readonly="true">${escapeHtml(config.default_llm_profile || "unknown")}</div></div>
-        <div class="setting-row"><span>Share policy</span><div class="control readonly-value" aria-readonly="true">private</div></div>
+        <h2>Meeting</h2>
+        <div class="setting-row"><span>Title</span><input id="recTitle" class="control" type="text" placeholder="New meeting" ${recording ? "disabled" : ""} /></div>
+        <div class="setting-row"><span>${t("transcriptLanguage")}</span><input id="recLanguage" class="control" type="text" value="${escapeHtml(config.default_language || "auto")}" ${recording ? "disabled" : ""} /></div>
+        <div class="setting-row"><span>Type</span><select id="recType" class="control sort-select" ${recording ? "disabled" : ""}>${MEETING_TYPES.map((tp) => `<option value="${tp}">${escapeHtml(tp)}</option>`).join("")}</select></div>
+        <div class="setting-row"><span>${t("sharePolicy")}</span><select id="recShare" class="control sort-select" ${recording ? "disabled" : ""}>${SHARE_POLICIES.map((p) => `<option value="${p}">${escapeHtml(p)}</option>`).join("")}</select></div>
       </div>
       <div class="panel">
-        <h2>Capture defaults</h2>
-        <div class="setting-row"><span>Microphone</span><strong>${escapeHtml(config.default_mic_index ?? "system default")}</strong></div>
-        <div class="setting-row"><span>Speaker loopback</span><strong>${escapeHtml(config.default_speaker_index ?? "auto probe")}</strong></div>
-        <div class="meter-row"><span>MIC</span><div class="static-meter"><span style="width:42%"></span></div></div>
-        <div class="meter-row"><span>SYS</span><div class="static-meter"><span style="width:36%"></span></div></div>
+        <h2>Capture</h2>
+        <div class="setting-row"><span>${t("microphone")}</span><strong>${escapeHtml(String(micLabel))}</strong></div>
+        <div class="setting-row"><span>${t("speakerLoopback")}</span><strong>${escapeHtml(String(spkLabel))}</strong></div>
+        <div class="setting-row"><label for="recAllowPartial">${t("allowPartial")}</label><input id="recAllowPartial" type="checkbox" checked ${recording ? "disabled" : ""} /></div>
+        <p class="setting-sub">${t("allowPartialSub")}</p>
+        <p class="setting-sub">${t("recordLiveLater")}</p>
       </div>
     </div>
     <div class="panel">
-      <h2>${t("liveTranscript")}</h2>
-      <div class="transcript-line placeholder"><div class="timestamp">00:00</div><div>Preview chunks will appear here after the UI has a live event stream.</div></div>
-      <div class="metadata-actions">
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("startRecording")}</button>
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("stopRecording")}</button>
-        <button class="secondary-button disabled-action" type="button" title="Backend gap">${t("processRecording")}</button>
+      <h2>${t("recordMeeting")}</h2>
+      <p class="setting-sub">${t("recordReportNote")}</p>
+      <div class="action-with-status">
+        <button class="secondary-button" id="recStartBtn" type="button" ${recording ? "disabled" : ""}>${t("startRecording")}</button>
+        <button class="secondary-button" id="recStopBtn" type="button" ${recording ? "" : "disabled"}>${t("stopRecording")}</button>
+        <span class="job-mount" id="recStatus"></span>
       </div>
+      <div class="meter-row"><span>MIC</span><div class="static-meter"><span id="recMeterMic" style="width:0%"></span></div></div>
+      <div class="meter-row"><span>SYS</span><div class="static-meter"><span id="recMeterSys" style="width:0%"></span></div></div>
     </div>
-    ${commandPanel("Record with CLI", ["uv run manola meet --language en", "uv run manola meet --language es", "uv run manola record --source meeting --process --language en"])}`);
+    <div class="panel">
+      <h2>${t("liveTranscript")}</h2>
+      <div id="recPreview" class="live-preview"><p class="muted">${t("recordPreviewEmpty")}</p></div>
+    </div>`);
+  bindRecord();
+}
+
+// Poll the lightweight recording-live endpoint (~400ms) for meters + preview.
+// This is the ADR-0003 streaming seam, scoped to recording, done as chunked
+// polling rather than SSE to keep the stdlib server and no build system.
+function startLivePolling(jobId) {
+  let since = 0;
+  const preview = document.getElementById("recPreview");
+  let cleared = false;
+  const setMeter = (id, rms) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    // RMS is roughly 0..0.3 for speech; scale to a readable bar.
+    const pct = Math.max(0, Math.min(100, Math.round((rms || 0) * 400)));
+    el.style.width = `${pct}%`;
+  };
+  const tick = async () => {
+    if (state.recordingJobId !== jobId) return;
+    let snap;
+    try {
+      snap = await api(`/api/recording/live?job_id=${jobId}&since=${since}`);
+    } catch {
+      return; // job may have ended; pollJob handles terminal state
+    }
+    if (snap.levels) {
+      setMeter("recMeterMic", snap.levels.mic);
+      setMeter("recMeterSys", snap.levels.system);
+    }
+    if (snap.preview && snap.preview.length && preview) {
+      if (!cleared) { preview.innerHTML = ""; cleared = true; }
+      snap.preview.forEach((line) => {
+        const div = document.createElement("div");
+        div.className = "transcript-line";
+        div.innerHTML = `<div>${escapeHtml(line)}</div>`;
+        preview.appendChild(div);
+      });
+      preview.scrollTop = preview.scrollHeight;
+    }
+    since = snap.preview_total ?? since;
+    if (state.recordingJobId === jobId && snap.status === "running") {
+      setTimeout(tick, 400);
+    }
+  };
+  tick();
+}
+
+function bindRecord() {
+  const startBtn = document.getElementById("recStartBtn");
+  const stopBtn = document.getElementById("recStopBtn");
+  const mount = document.getElementById("recStatus");
+  if (startBtn) {
+    startBtn.addEventListener("click", async () => {
+      const params = {
+        title: document.getElementById("recTitle").value || undefined,
+        language: document.getElementById("recLanguage").value || undefined,
+        meeting_type: document.getElementById("recType").value,
+        share_policy: document.getElementById("recShare").value,
+        allow_partial: document.getElementById("recAllowPartial").checked,
+      };
+      let job;
+      try {
+        job = await apiPost("/api/jobs/record", params);
+      } catch (err) {
+        flashStatus(mount, false, `${t("jobFailed")}: ${err.message}`);
+        return;
+      }
+      state.recordingJobId = job.id;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      startLivePolling(job.id);
+      pollJob(job.id, mount, async (result) => {
+        state.recordingJobId = null;
+        state.data = await api("/api/state");
+        if (result && result.meeting) {
+          state.selectedPath = result.meeting;
+          state.view = "archive";
+        }
+        render();
+      });
+    });
+  }
+  if (stopBtn) {
+    stopBtn.addEventListener("click", async () => {
+      if (!state.recordingJobId) return;
+      stopBtn.disabled = true;
+      try {
+        await apiPost("/api/recording/stop", { job_id: state.recordingJobId });
+      } catch (err) {
+        flashStatus(mount, false, `${t("saveFailed")}: ${err.message}`);
+      }
+    });
+  }
 }
 
 function renderSimple(title, sub, content) {
@@ -1207,46 +1364,8 @@ function pipelineRows(m) {
   return rows.map(([label, ok]) => `<div class="setting-row"><span class="status-dot ${ok ? "ok" : "warn"}"></span><span>${escapeHtml(label)}</span></div>`).join("");
 }
 
-function importPipelineRows() {
-  return ["Copy original", "Normalize", "Transcribe", "Summarize", "Export"].map((label) => `<div class="setting-row"><span class="status-dot warn"></span><span>${escapeHtml(label)}</span><span class="badge">pending</span></div>`).join("");
-}
-
 function deviceList(title, devices, defaultName) {
   return `<div class="panel"><h2>${escapeHtml(title)}</h2>${(devices || []).map((d, i) => `<div class="setting-row"><span class="status-dot ok"></span><span class="mono muted">${i + 1}</span><span>${escapeHtml(d)}</span>${d === defaultName ? `<span class="badge good">default</span>` : `<span class="badge">detected</span>`}</div>`).join("") || "<p class='muted'>None detected.</p>"}</div>`;
-}
-
-function commandPanel(title, commands) {
-  return `<div class="panel command-panel">
-    <div class="report-context">
-      <h2>${escapeHtml(title)}</h2>
-      ${disabledAction(t("runCli"), "jobBackend")}
-    </div>
-    ${commands.map((command) => `<div class="setting-row"><span class="mono">${escapeHtml(command)}</span></div>`).join("")}
-  </div>`;
-}
-
-function disabledAction(label, area) {
-  return `<button class="secondary-button disabled-action" type="button" title="${escapeHtml(backendGapDetail(area))}">${escapeHtml(label)}</button>`;
-}
-
-function gapBlock(text) {
-  return `<div class="panel warn"><strong>${t("backendGap")}</strong><p>${escapeHtml(text)}</p></div>`;
-}
-
-function gapButton(area) {
-  return disabledAction(t("unavailable"), area);
-}
-
-function backendGapDetail(area) {
-  const gaps = {
-    exportBackend: "Export needs an async backend job endpoint before the UI can run it.",
-    jobBackend: "This UI action needs a backend job endpoint before it can run.",
-    metadataBackend: "Metadata enrichment and apply/save need write endpoints before the UI can run them.",
-    repairBackend: "Audio repair needs a tracked backend repair job before the UI can run it.",
-    reportBackend: "Report regeneration needs an async summarize job before the UI can run it.",
-    transcribeBackend: "Retranscription needs an async transcription job before the UI can run it.",
-  };
-  return gaps[area] || "This action is unavailable until the backend API exists.";
 }
 
 function renderMarkdownSections(text) {

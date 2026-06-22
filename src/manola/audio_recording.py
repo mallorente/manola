@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from threading import Event
 from typing import Callable
 
 import numpy as np
@@ -156,6 +157,7 @@ def record_meeting_until_stopped(
     status: Callable[[str], None] | None = None,
     on_audio_chunk: Callable[[np.ndarray, int], None] | None = None,
     on_audio_level: Callable[[dict[str, float]], None] | None = None,
+    stop_signal: "Event | None" = None,
 ) -> AudioTestResult:
     if duration_seconds is not None and duration_seconds <= 0:
         raise ManolaError("Recording duration must be greater than zero.")
@@ -224,6 +226,10 @@ def record_meeting_until_stopped(
                         paused = False
                     else:
                         inactive_seconds += current_frames / float(sample_rate)
+
+                    if stop_signal is not None and stop_signal.is_set():
+                        stop_reason = "stopped from UI"
+                        break
 
                     if stop_pressed:
                         stop_reason = f"'{stop_key}' pressed"

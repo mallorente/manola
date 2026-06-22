@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 import wave
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -231,8 +232,8 @@ def _post_path(base, path, payload):
 def test_build_job_registry_wires_batch_3_actions():
     registry = build_job_registry()
     try:
-        assert set(registry._handlers) == {"transcribe", "summarize", "enrich", "export", "repair"}
-        assert registry._gpu_actions == frozenset({"transcribe", "repair"})
+        assert {"transcribe", "summarize", "enrich", "export", "repair"} <= set(registry._handlers)
+        assert {"transcribe", "repair"} <= registry._gpu_actions
         # summarize + enrich must be gated by the remote-LLM privacy flag.
         assert {"summarize", "enrich"} <= registry._remote_llm_actions
     finally:
@@ -291,6 +292,141 @@ def test_config_endpoint_rejects_non_whitelisted_field(monkeypatch):
         assert calls == []  # nothing was written
     finally:
         server.shutdown()
+        registry.close()
+
+
+def test_recording_stop_endpoint_signals_job():
+    started = threading.Event()
+
+    def record_handler(params, report):
+        started.set()
+        params["_stop_event"].wait(timeout=5)
+        return {"meeting": "done"}
+
+    registry = JobRegistry({"record": record_handler})
+    server, base = _serving_handler(registry)
+    try:
+        status, job = _post(base, "record", {})
+        assert status == 202
+        assert started.wait(2)
+
+        s2, body = _post_path(base, "/api/recording/stop", {"job_id": job["id"]})
+        assert s2 == 200
+        assert body["stopped"] is True
+
+        rec = registry.wait(job["id"], timeout=5)
+        assert rec is not None and rec.status == "done"
+
+        try:
+            _post_path(base, "/api/recording/stop", {"job_id": "nope"})
+            raise AssertionError("expected HTTP 404")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+    finally:
+        server.shutdown()
+        registry.close()
+
+
+def test_recording_live_endpoint_streams_levels_and_preview():
+    release = threading.Event()
+
+    def record_handler(params, report):
+        params["_live_update"](levels={"mic": 0.1, "system": 0.0})
+        params["_live_update"](preview_line="hi there")
+        release.wait(timeout=5)
+        return {"meeting": "done"}
+
+    registry = JobRegistry({"record": record_handler})
+    server, base = _serving_handler(registry)
+    try:
+        _status, job = _post(base, "record", {})
+        snap = None
+        for _ in range(50):
+            with urllib.request.urlopen(f"{base}/api/recording/live?job_id={job['id']}") as response:
+                snap = json.loads(response.read().decode("utf-8"))
+            if snap["preview_total"] >= 1:
+                break
+            time.sleep(0.02)
+        assert snap["levels"] == {"mic": 0.1, "system": 0.0}
+        assert snap["preview"] == ["hi there"]
+
+        try:
+            urllib.request.urlopen(f"{base}/api/recording/live?job_id=nope")
+            raise AssertionError("expected HTTP 404")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+    finally:
+        release.set()
+        server.shutdown()
+        registry.close()
+
+
+def _post_bytes(base, path, data, content_type="application/octet-stream"):
+    request = urllib.request.Request(
+        f"{base}{path}", data=data, headers={"Content-Type": content_type}, method="POST"
+    )
+    with urllib.request.urlopen(request) as response:
+        return response.status, json.loads(response.read().decode("utf-8"))
+
+
+def test_import_upload_rejects_unsupported_type():
+    registry = JobRegistry({"import": lambda params, report: {"meeting": "x"}})
+    server, base = _serving_handler(registry)
+    try:
+        try:
+            _post_bytes(base, "/api/import?filename=notes.txt", b"data")
+            raise AssertionError("expected HTTP 415")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 415
+    finally:
+        server.shutdown()
+        registry.close()
+
+
+def test_import_upload_persists_file_and_starts_job(tmp_path):
+    captured = {}
+
+    def import_handler(params, report):
+        captured["audio_path"] = params["audio_path"]
+        captured["title"] = params.get("title")
+        captured["exists_during_job"] = Path(params["audio_path"]).exists()
+        return {"meeting": "done", "audio_path": params["audio_path"]}
+
+    registry = JobRegistry({"import": import_handler})
+    server, base = _serving_handler(registry)
+    try:
+        status, job = _post_bytes(base, "/api/import?filename=meeting.m4a&title=Hi", b"AUDIOBYTES")
+        assert status == 202
+        assert job["action"] == "import"
+
+        finished = registry.wait(job["id"], timeout=5)
+        assert finished is not None and finished.status == "done"
+        assert captured["exists_during_job"] is True
+        assert captured["audio_path"].endswith(".m4a")
+        assert captured["title"] == "Hi"
+    finally:
+        server.shutdown()
+        registry.close()
+
+
+def test_backend_gaps_only_lists_open_gaps():
+    from manola.ui_server import backend_gaps
+
+    areas = {gap["area"] for gap in backend_gaps()}
+    # Record and import are wired now (Batches 2-4); only UI-local prefs remain.
+    assert "recording" not in areas
+    assert "import" not in areas
+    assert "long-running jobs" not in areas
+    assert areas == {"app preferences"}
+
+
+def test_build_job_registry_includes_record_action():
+    registry = build_job_registry()
+    try:
+        assert "record" in registry._handlers
+        assert "record" not in registry._gpu_actions
+        assert "record" not in registry._remote_llm_actions
+    finally:
         registry.close()
 
 

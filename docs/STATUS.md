@@ -1,6 +1,6 @@
 # Manola Status
 
-Last updated: 2026-06-18
+Last updated: 2026-06-21
 
 ## Current State
 
@@ -115,6 +115,42 @@ Batch 2 (Job-API keystone) implemented on 2026-06-18:
 - Gate: tracking issue #54. Awaiting human check (click Retranscribe on a real
   meeting, confirm live progress + transcript refresh + clear failure surfacing)
   before flipping Batch 3 (#32–#37) to `ready-for-agent`.
+
+Batch 4 (Audio without a terminal) implemented on 2026-06-21:
+
+- Issues #38–#41 (`docs/PRD-UI-Functional-Completion.md`, Batch 4). Builds on the
+  Batch 2 job API + `runJob` component and introduces the ADR-0003 streaming seam
+  (recording endpoints only).
+- #38 Recording from the UI: `record_meeting_until_stopped` accepts a
+  `stop_signal` Event (cooperative stop, not just the stop key);
+  `JobRegistry` gains per-job stop (`request_stop`, `params["_stop_event"]`); new
+  `record` job (open-ended capture, silence auto-stop disabled, COM on the worker
+  thread) records then transcribes; `POST /api/recording/stop` signals it. Record
+  screen has title/language/type/share inputs + Start/Stop. Report generation
+  stays an explicit follow-up (keeps the remote-LLM privacy gate). An
+  "Allow partial capture" checkbox (default on) keeps mic-only recordings instead
+  of failing when system audio is silent.
+- #39 Live meters + preview: `Job.live` channel (`_live_update` into params,
+  `live_snapshot(job_id, since)`); the record handler feeds `on_audio_level` and
+  live-transcript preview; `GET /api/recording/live` is polled ~400ms for MIC/SYS
+  meter bars and an incremental preview. Final `transcript.md` stays canonical.
+  Chunked polling, not SSE, to keep the stdlib server and no build system.
+- #40 Import via upload: `POST /api/import` takes the raw file body (no multipart)
+  with metadata in the query; validates extension against
+  `SUPPORTED_IMPORT_SUFFIXES` (415), caps size (413), streams to a temp file, and
+  runs a GPU-serialized `import` job (import_recording + transcribe) that deletes
+  the upload after. Import screen has a file picker + metadata + Process.
+- #41 Removed CLI escape hatches: deleted the disabled-action/backend-gap
+  scaffolding (disabledAction/gapButton/gapBlock/backendGapDetail/commandPanel/
+  importPipelineRows) and CLI command panels; reworded empty/health states to
+  point at in-UI actions; wired Rerun doctor to refresh in-UI; `backend_gaps()`
+  lists only the UI-local "app preferences" gap; pruned unused i18n keys.
+- Verification: full suite **146 passed**. Live smoke: recording stop endpoint
+  404/400, recording-live 404 for unknown job, import 415 on bad type, server
+  serves cleanly. Real capture verified manually on Windows (mic + loopback).
+- Gate: tracking issue #56. Awaiting human check (record → transcript → report
+  and import → transcript → report fully in the browser; no terminal instruction
+  remains) before closing the UI-completion PRD (#58).
 
 Batch 3 (Wire the remaining actions) implemented on 2026-06-18:
 
