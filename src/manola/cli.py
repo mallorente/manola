@@ -772,6 +772,7 @@ def meet(
     silence_timeout: Annotated[int, typer.Option("--silence-timeout", help="Stop after this many seconds of system-audio silence. Use 0 to disable.")] = 30,
     pause_after_silence: Annotated[int, typer.Option("--pause-after-silence", help="Pause writing silent audio after this many inactive seconds. Use 0 to disable pause/resume.")] = 10,
     stop_key: Annotated[str, typer.Option("--stop-key", help="Keyboard key that stops recording.")] = "q",
+    vad: Annotated[bool | None, typer.Option("--vad/--no-vad", help="Use voice-activity detection so quiet speech is not mistaken for silence during pause/resume. Uses vad_pause_resume from config when omitted.")] = None,
     meeting_type: Annotated[MeetingType, typer.Option("--type", help="Report template / meeting type.")] = MeetingType.general,
     project: Annotated[str | None, typer.Option(help="Optional project folder under Meetings/Projects.")] = None,
     language: Annotated[Language | None, typer.Option(help="Transcription language. Prefer es/en when known. Uses default_language from config when omitted.")] = None,
@@ -875,6 +876,8 @@ def meet(
             silence_timeout_seconds=silence_timeout,
             pause_after_silence_seconds=pause_after_silence,
             stop_key=stop_key,
+            use_vad=vad if vad is not None else config.vad_pause_resume,
+            vad_aggressiveness=config.vad_aggressiveness,
             live_transcript=live_transcript,
             live_transcript_preview=_print_live_transcript_preview if live_transcript else None,
             audio_level=_audio_level_meter(levels),
@@ -933,6 +936,7 @@ def record(
     llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate report with remote LLM when --process is used. Uses default_generate_llm_report from config when omitted.")] = None,
     live_transcript: Annotated[bool, typer.Option("--live-transcript/--no-live-transcript", help="Show and persist preview transcript chunks while recording meeting audio.")] = False,
     enhance_voice: Annotated[str | None, typer.Option("--enhance-voice", help="Voice enhancement mode used when --process transcribes: off, light, denoise, or speech. Writes audio/enhanced.wav and never overwrites the recording. Uses default_enhance_voice from config when omitted.")] = None,
+    vad: Annotated[bool | None, typer.Option("--vad/--no-vad", help="Use voice-activity detection for pause/resume during open-ended meeting capture. Uses vad_pause_resume from config when omitted.")] = None,
 ) -> None:
     """Advanced: record a raw WAV. Use `manola meet` for the normal meeting workflow."""
     config = load_config()
@@ -959,6 +963,8 @@ def record(
             speaker_name=speaker,
             speaker_index=speaker_index,
             allow_partial=allow_partial,
+            use_vad=vad if vad is not None else config.vad_pause_resume,
+            vad_aggressiveness=config.vad_aggressiveness,
             live_transcript=live_transcript,
             live_transcript_preview=_print_live_transcript_preview if live_transcript else None,
             status=_status,

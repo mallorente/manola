@@ -76,10 +76,21 @@ Batch 5 (Near-term capability) started on 2026-06-22:
   `metadata.json`. `transcribe_meeting` transcribes the enhanced audio when present
   (falls back to normalized if missing); `repair_meeting` regenerates the enhanced
   artifact after re-normalizing; `--share all` exports `enhanced.wav` when present.
-- Verification: full suite **158 passed** (+6 migration, +16 enhancement tests:
-  mode resolution, off/mode import artifacts + metadata, transcribe-prefers-enhanced
-  + normalized fallback, export inclusion/omission, config default).
-- Remaining Batch 5 issues: #42 VAD pause/resume, #44 speaker diarization.
+- #42 VAD pause/resume: new `src/manola/vad.py` wraps `webrtcvad`
+  (`webrtcvad-wheels`, optional with graceful RMS fallback) into a `SpeechDetector`
+  that splits each recording chunk into 30 ms frames and reports speech above a
+  voiced-frame ratio. `record_meeting_until_stopped` builds the detector
+  (`use_vad`/`vad_aggressiveness`) and folds it into the activity check
+  *additively*: VAD can only rescue quiet-but-present speech below the RMS floor,
+  never introduce a pause the RMS rule wouldn't already allow, so existing
+  pause/resume semantics are preserved with zero regression risk. Threaded through
+  `create_recorded_meeting`; `meet` and `record` expose `--vad/--no-vad` (default
+  from new `vad_pause_resume`/`vad_aggressiveness` config). Falls back to RMS-only
+  with a one-line notice when webrtcvad is unavailable.
+- Verification: full suite **166 passed** (+6 migration, +16 enhancement, +8 VAD
+  tests: voiced-ratio threshold, unsupported sample rate, short audio, detector
+  error, real-lib silence, missing-lib fallback, config defaults).
+- Remaining Batch 5 issue: #44 speaker diarization.
 
 Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
 
@@ -213,6 +224,8 @@ uv run manola meet --language es --no-levels
 uv run manola meet --language es --auto-speaker
 uv run manola meet --language es --no-enrich
 uv run manola meet --language es --no-live-transcript
+uv run manola meet --language es --vad
+uv run manola meet --language es --no-vad
 uv run manola process <audio-path> --language es --share all
 uv run manola process <audio-path> --language es --enhance-voice speech
 uv run manola import <audio-path> --language es --share all
@@ -395,7 +408,7 @@ audio/
 - PRD includes a Post-MVP Roadmap for calendar-assisted naming, a terminal meeting browser/TUI, and automatic meeting detection.
 - `base` Whisper is too weak for faithful meeting transcripts. Prefer `large-v3` for quality or `turbo` for speed.
 - Name-based device selection matches names by exact case-insensitive match or substring; ambiguous matches fail and ask for a more specific name. Prefer indices from `manola devices` when names are duplicated.
-- Pause/resume is implemented with simple RMS thresholds. It does not yet use VAD or distinguish intentional silence from very quiet speakers.
+- Pause/resume uses voice-activity detection (webrtcvad) additively on top of the RMS thresholds, so quiet-but-present speech below the RMS floor is no longer mistaken for silence (Batch 5 #42, `--vad/--no-vad`). It still does not distinguish intentional silence from ambient noise above the RMS floor; that would need a speech-vs-noise gate rather than an additive rescue.
 - Live transcript is implemented as preview-quality chunk transcription with overlap and simple deduplication. It does not yet do VAD or live diarization.
 - Voice enhancement is a selectable processing step (`--enhance-voice off/light/denoise/speech` on `process` and `record --process`, or `default_enhance_voice` in config), in addition to the `audio enhance-test` comparison command. It is opt-in, not on by default (Batch 5 #43).
 - No diarization yet.
