@@ -49,11 +49,15 @@ def _files_for_policy(policy: SharePolicy, metadata: dict) -> list[Path]:
     if policy == SharePolicy.all:
         audio_original = Path(metadata.get("audio_original", "audio/original.m4a"))
         audio_normalized = Path(metadata.get("audio_normalized", "audio/normalized.wav"))
-        return [
+        files = [
             Path("metadata.json"),
             Path("report.md"),
             Path("transcript.md"),
             audio_original,
             audio_normalized,
         ]
+        audio_enhanced = metadata.get("audio_enhanced")
+        if audio_enhanced:
+            files.append(Path(audio_enhanced))
+        return files
     return []

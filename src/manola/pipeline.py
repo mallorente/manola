@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from .audio import copy_original, normalize_audio
+from .audio import copy_original, enhance_voice, normalize_audio, normalize_enhance_mode
 from .audio_recording import AudioTestResult, record_meeting_until_stopped, record_wav
 from .config import AppConfig
 from .errors import ManolaError
@@ -21,6 +21,24 @@ from .naming import (
 from .reporting import fallback_report, generate_metadata_suggestions, generate_report
 from .status import StatusCallback, noop_status
 from .transcription import transcribe_audio
+
+
+def _maybe_enhance_audio(
+    normalized: Path,
+    mode: str | None,
+    status: StatusCallback,
+) -> tuple[Path | None, str | None]:
+    """Produce ``enhanced.wav`` next to ``normalized`` when a mode is requested.
+
+    Returns the enhanced audio path (or ``None``) and the resolved filtering mode
+    (or ``None``). Never touches the original or normalized audio.
+    """
+    resolved = normalize_enhance_mode(mode)
+    if resolved is None:
+        return None, None
+    status(f"Enhancing voice audio (mode: {resolved})...")
+    enhanced = enhance_voice(normalized, normalized.with_name("enhanced.wav"), mode=resolved)
+    return enhanced, resolved
 
 
 def import_recording(
@@ -47,6 +65,7 @@ def import_recording(
     original = copy_original(source, audio_dir)
     status("Normalizing audio with FFmpeg...")
     normalized = normalize_audio(original, audio_dir / "normalized.wav")
+    enhanced, enhancement_mode = _maybe_enhance_audio(normalized, options.enhance_voice, status)
 
     options = options.model_copy(update={"title": title})
     status("Writing metadata and placeholder files...")
@@ -74,6 +93,8 @@ def import_recording(
         llm_profile=options.llm_profile,
         audio_original=str(original.relative_to(meeting_dir)),
         audio_normalized=str(normalized.relative_to(meeting_dir)),
+        audio_enhanced=str(enhanced.relative_to(meeting_dir)) if enhanced else None,
+        enhancement_mode=enhancement_mode,
         transcript=str(transcript_path.relative_to(meeting_dir)),
         report=str(report_path.relative_to(meeting_dir)),
     )
@@ -188,6 +209,7 @@ def create_recorded_meeting(
         )
     status("Normalizing recorded audio with FFmpeg...")
     normalize_audio(recorded, normalized)
+    enhanced, enhancement_mode = _maybe_enhance_audio(normalized, options.enhance_voice, status)
 
     options = options.model_copy(update={"title": title, "audio_path": recorded})
     status("Writing metadata and placeholder files...")
@@ -212,6 +234,8 @@ def create_recorded_meeting(
         llm_profile=options.llm_profile,
         audio_original=str(recorded.relative_to(meeting_dir)),
         audio_normalized=str(normalized.relative_to(meeting_dir)),
+        audio_enhanced=str(enhanced.relative_to(meeting_dir)) if enhanced else None,
+        enhancement_mode=enhancement_mode,
         transcript=str(transcript_path.relative_to(meeting_dir)),
         report=str(report_path.relative_to(meeting_dir)),
     )
@@ -284,6 +308,14 @@ def transcribe_meeting(
     if not normalized.exists():
         raise ManolaError(f"No normalized audio found at {normalized}.")
 
+    # Prefer enhanced audio for transcription when it was produced; the original
+    # and normalized audio are always preserved regardless.
+    source_audio = normalized
+    if metadata.audio_enhanced:
+        enhanced = meeting_dir / metadata.audio_enhanced
+        if enhanced.exists():
+            source_audio = enhanced
+
     transcript_path = meeting_dir / metadata.transcript
     if (
         transcript_path.exists()
@@ -294,9 +326,9 @@ def transcribe_meeting(
         status("Transcript already exists; skipping transcription. Use --force to regenerate.")
         return transcript_path
 
-    status(f"Transcribing normalized audio: {normalized.name}...")
+    status(f"Transcribing audio: {source_audio.name}...")
     transcript = transcribe_audio(
-        normalized,
+        source_audio,
         backend=metadata.transcription_backend,
         language=metadata.language,
         config=config,
@@ -483,6 +515,9 @@ def repair_meeting(
     normalized = meeting_dir / metadata.audio_normalized
     status("Re-normalizing source audio with FFmpeg...")
     normalize_audio(original, normalized)
+    if metadata.enhancement_mode:
+        # Keep enhanced audio consistent with the freshly normalized audio.
+        _maybe_enhance_audio(normalized, metadata.enhancement_mode, status)
     status("Re-transcribing repaired audio...")
     return transcribe_meeting(meeting_dir, config, status=status, force=True)
 

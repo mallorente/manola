@@ -239,6 +239,7 @@ def process(
     backend: Annotated[TranscriptionBackend, typer.Option("--backend")] = TranscriptionBackend.local,
     llm_profile: Annotated[str, typer.Option("--llm-profile")] = "deepseek_fast",
     llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate a report with the configured remote LLM. Uses default_generate_llm_report from config when omitted.")] = None,
+    enhance_voice: Annotated[str | None, typer.Option("--enhance-voice", help="Voice enhancement mode for transcription: off, light, denoise, or speech. Writes audio/enhanced.wav and never overwrites the original. Uses default_enhance_voice from config when omitted.")] = None,
 ) -> None:
     """Process an existing recording into a transcript, report, and local archive."""
     config = load_config()
@@ -253,6 +254,7 @@ def process(
         share_policy=share,
         transcription_backend=backend,
         llm_profile=llm_profile,
+        enhance_voice=enhance_voice if enhance_voice is not None else config.default_enhance_voice,
     )
     try:
         _status("Starting process workflow...")
@@ -485,7 +487,7 @@ def audio_test(
 @audio_app.command("enhance-test")
 def audio_enhance_test(
     target: Annotated[str, typer.Argument(help="Meeting id/path or standalone audio path to enhance experimentally.")],
-    mode: Annotated[str, typer.Option("--mode", help="Enhancement mode: light or denoise.")] = "light",
+    mode: Annotated[str, typer.Option("--mode", help="Enhancement mode: light, denoise, or speech.")] = "light",
     language: Annotated[Language, typer.Option("--language", help="Transcription language for comparison.")] = Language.auto,
     transcribe: Annotated[bool, typer.Option("--transcribe/--no-transcribe", help="Write baseline and enhanced comparison transcripts.")] = True,
     output_dir: Annotated[Path | None, typer.Option("--output-dir", help="Output directory for standalone audio files. Meetings use their own folder by default.")] = None,
@@ -930,6 +932,7 @@ def record(
     process_after: Annotated[bool, typer.Option("--process/--no-process", help="Transcribe and optionally summarize after recording.")] = False,
     llm: Annotated[bool | None, typer.Option("--llm/--no-llm", help="Generate report with remote LLM when --process is used. Uses default_generate_llm_report from config when omitted.")] = None,
     live_transcript: Annotated[bool, typer.Option("--live-transcript/--no-live-transcript", help="Show and persist preview transcript chunks while recording meeting audio.")] = False,
+    enhance_voice: Annotated[str | None, typer.Option("--enhance-voice", help="Voice enhancement mode used when --process transcribes: off, light, denoise, or speech. Writes audio/enhanced.wav and never overwrites the recording. Uses default_enhance_voice from config when omitted.")] = None,
 ) -> None:
     """Advanced: record a raw WAV. Use `manola meet` for the normal meeting workflow."""
     config = load_config()
@@ -944,6 +947,7 @@ def record(
             attendees=_attendees(attendee),
             share_policy=share,
             transcription_backend=TranscriptionBackend.local,
+            enhance_voice=enhance_voice if enhance_voice is not None else config.default_enhance_voice,
         )
         meeting_dir, result = create_recorded_meeting(
             options,

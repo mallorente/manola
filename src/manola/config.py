@@ -32,6 +32,7 @@ class AppConfig(BaseModel):
     default_generate_llm_report: bool = True
     default_transcription_backend: str = "local"
     default_language: str = "auto"
+    default_enhance_voice: str = "off"
     default_mic_index: int | None = None
     default_speaker_index: int | None = None
     local_whisper_model: str = "base"
@@ -155,6 +156,7 @@ def render_config(config: AppConfig) -> str:
         f"default_generate_llm_report = {str(config.default_generate_llm_report).lower()}",
         f'default_transcription_backend = "{config.default_transcription_backend}"',
         f'default_language = "{config.default_language}"',
+        f'default_enhance_voice = "{config.default_enhance_voice}"',
         _optional_int_line("default_mic_index", config.default_mic_index, 1),
         _optional_int_line("default_speaker_index", config.default_speaker_index, 3),
         f'local_whisper_model = "{_toml_string(config.local_whisper_model)}"',

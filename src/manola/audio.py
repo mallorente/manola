@@ -8,7 +8,28 @@ from .errors import DependencyMissingError, ManolaError
 
 
 SUPPORTED_AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".mp4"}
-VOICE_ENHANCEMENT_MODES = {"light", "denoise"}
+# Filtering modes. ``off`` is the sentinel for "no enhancement" and is handled
+# by callers (see ``normalize_enhance_mode``); it is not a filter itself.
+VOICE_ENHANCEMENT_MODES = {"light", "denoise", "speech"}
+ENHANCE_VOICE_CHOICES = ("off", "light", "denoise", "speech")
+
+
+def normalize_enhance_mode(mode: str | None) -> str | None:
+    """Resolve a requested enhancement mode to a filtering mode or ``None``.
+
+    ``None``, empty, and ``"off"`` all mean "do not enhance" and return ``None``.
+    Any other value must be a known filtering mode, otherwise a ManolaError is
+    raised. Comparison is case-insensitive.
+    """
+    if mode is None:
+        return None
+    cleaned = mode.strip().lower()
+    if cleaned in ("", "off"):
+        return None
+    if cleaned not in VOICE_ENHANCEMENT_MODES:
+        supported = ", ".join(ENHANCE_VOICE_CHOICES)
+        raise ManolaError(f"Unsupported voice enhancement mode {mode!r}. Supported: {supported}.")
+    return cleaned
 
 
 def ffmpeg_path() -> str | None:
@@ -68,6 +89,7 @@ def enhance_voice(source: Path, target: Path, *, mode: str = "light") -> Path:
     filters = {
         "light": "highpass=f=80,lowpass=f=8000,loudnorm=I=-18:TP=-2:LRA=11,dynaudnorm=f=150:g=15",
         "denoise": "highpass=f=100,lowpass=f=7500,afftdn=nf=-25,loudnorm=I=-18:TP=-2:LRA=11,dynaudnorm=f=150:g=15",
+        "speech": "highpass=f=120,lowpass=f=7000,afftdn=nf=-30,loudnorm=I=-16:TP=-1.5:LRA=9,dynaudnorm=f=120:g=11",
     }
     target.parent.mkdir(parents=True, exist_ok=True)
     completed = subprocess.run(

@@ -66,10 +66,20 @@ Batch 5 (Near-term capability) started on 2026-06-22:
   legacy parent folders without ever removing the workspace root. Discovery was
   already covered by `iter_meetings` (recursive `rglob`); this adds migration.
   Exposed as `manola migrate` (preview) / `manola migrate --apply`.
-- Verification: full suite **142 passed** (+6 migration tests:
-  detect/dry-run/relocate+prune/collision/project-folder/simplified-noop).
-- Remaining Batch 5 issues: #42 VAD pause/resume, #43 voice enhancement modes,
-  #44 speaker diarization.
+- #43 Voice enhancement modes: voice enhancement is now a real processing option,
+  not just the `audio enhance-test` comparison command. `ProcessOptions` carries
+  an `enhance_voice` mode (`off/light/denoise/speech`, added a `speech` FFmpeg
+  filter); `process` and `record --process` expose `--enhance-voice` (default from
+  the new `default_enhance_voice` config, `off`). `import_recording` and
+  `create_recorded_meeting` write `audio/enhanced.wav` next to (never overwriting)
+  `original`/`normalized`, and record `audio_enhanced` + `enhancement_mode` in
+  `metadata.json`. `transcribe_meeting` transcribes the enhanced audio when present
+  (falls back to normalized if missing); `repair_meeting` regenerates the enhanced
+  artifact after re-normalizing; `--share all` exports `enhanced.wav` when present.
+- Verification: full suite **158 passed** (+6 migration, +16 enhancement tests:
+  mode resolution, off/mode import artifacts + metadata, transcribe-prefers-enhanced
+  + normalized fallback, export inclusion/omission, config default).
+- Remaining Batch 5 issues: #42 VAD pause/resume, #44 speaker diarization.
 
 Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
 
@@ -204,7 +214,9 @@ uv run manola meet --language es --auto-speaker
 uv run manola meet --language es --no-enrich
 uv run manola meet --language es --no-live-transcript
 uv run manola process <audio-path> --language es --share all
+uv run manola process <audio-path> --language es --enhance-voice speech
 uv run manola import <audio-path> --language es --share all
+uv run manola record --source meeting --process --enhance-voice denoise
 uv run manola transcribe <meeting-id-or-path> --summarize --export
 uv run manola summarize <meeting-id-or-path> --export
 uv run manola enrich <meeting-id-or-path>
@@ -385,7 +397,7 @@ audio/
 - Name-based device selection matches names by exact case-insensitive match or substring; ambiguous matches fail and ask for a more specific name. Prefer indices from `manola devices` when names are duplicated.
 - Pause/resume is implemented with simple RMS thresholds. It does not yet use VAD or distinguish intentional silence from very quiet speakers.
 - Live transcript is implemented as preview-quality chunk transcription with overlap and simple deduplication. It does not yet do VAD or live diarization.
-- Voice enhancement exists as an explicit comparison command, not as a default processing step.
+- Voice enhancement is a selectable processing step (`--enhance-voice off/light/denoise/speech` on `process` and `record --process`, or `default_enhance_voice` in config), in addition to the `audio enhance-test` comparison command. It is opt-in, not on by default (Batch 5 #43).
 - No diarization yet.
 - There may be old meeting folders with the former verbose path layout:
 
