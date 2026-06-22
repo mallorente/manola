@@ -16,6 +16,7 @@ from .audio_recording import inspect_audio_devices, record_audio_test, record_wa
 from .exporting import export_meeting
 from .models_store import FASTER_WHISPER_REPOS, download_faster_whisper_model, list_downloaded_models
 from .models import Language, MeetingType, MetadataSuggestions, ProcessOptions, SharePolicy, TranscriptionBackend
+from .migration import migrate_legacy_meetings
 from .naming import generic_recording_title, meeting_folder_name, proposed_archive_parent
 from .pipeline import apply_suggested_title, create_recorded_meeting, enrich_meeting, import_recording, iter_meetings, process_recording, resolve_meeting, summarize_meeting, transcribe_meeting
 from .prompts import iter_prompt_status, load_prompt_template
@@ -734,6 +735,28 @@ def list_meetings() -> None:
         return
     for metadata_path in meetings:
         typer.echo(str(metadata_path.parent))
+
+
+@app.command()
+def migrate(
+    apply: Annotated[bool, typer.Option("--apply", help="Move the folders. Without it, only previews the migration.")] = False,
+) -> None:
+    """Migrate old nested-layout meetings to the simplified workspace layout."""
+    config = load_config()
+    try:
+        moves = migrate_legacy_meetings(config, status=_status, apply=apply)
+    except ManolaError as exc:
+        _fail(str(exc))
+    if not moves:
+        typer.echo("No legacy-layout meetings found. Workspace already uses the simplified layout.")
+        return
+    verb = "Migrated" if apply else "Would migrate"
+    for old, new in moves:
+        typer.echo(f"{verb}: {old} -> {new}")
+    if apply:
+        typer.echo(f"\nMigrated {len(moves)} meeting(s).")
+    else:
+        typer.echo(f"\n{len(moves)} meeting(s) to migrate. Re-run with --apply to move them.")
 
 
 @app.command()

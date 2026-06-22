@@ -54,6 +54,23 @@ Roadmap planning published on 2026-06-18:
   - Only Batch 1 (#26–#29) carries `ready-for-agent`; later batches stay `needs-triage` until each gate opens. Tracking issues carry `ready-for-human`.
 - Gate workflow: run a batch → human check on its tracking issue → flip the next milestone's issues to `ready-for-agent`.
 
+Batch 5 (Near-term capability) started on 2026-06-22:
+
+- Batch 4 verified by the human gate (#56) and merged via PR #64; Batch 5 issues
+  #42–#45 flipped to `ready-for-agent`. Tracking issue #57.
+- #45 Old nested-folder migration: new `src/manola/migration.py` detects meetings
+  whose parent folder is not their canonical location (`proposed_archive_parent`
+  for the meeting's type/project) and relocates them to the simplified layout,
+  preserving the leaf folder name (and thus the recognizable id), resolving leaf
+  collisions with a `-2/-3` suffix, fixing `metadata.id`, and pruning emptied
+  legacy parent folders without ever removing the workspace root. Discovery was
+  already covered by `iter_meetings` (recursive `rglob`); this adds migration.
+  Exposed as `manola migrate` (preview) / `manola migrate --apply`.
+- Verification: full suite **142 passed** (+6 migration tests:
+  detect/dry-run/relocate+prune/collision/project-folder/simplified-noop).
+- Remaining Batch 5 issues: #42 VAD pause/resume, #43 voice enhancement modes,
+  #44 speaker diarization.
+
 Batch 1 (Cosmetic & read-only correctness) implemented on 2026-06-18:
 
 - Issues #26–#29 (`docs/PRD-UI-Functional-Completion.md`, Batch 1). Frontend-only
@@ -192,6 +209,8 @@ uv run manola transcribe <meeting-id-or-path> --summarize --export
 uv run manola summarize <meeting-id-or-path> --export
 uv run manola enrich <meeting-id-or-path>
 uv run manola export <meeting-id-or-path> --share all
+uv run manola migrate
+uv run manola migrate --apply
 uv run manola record --duration 30 --source meeting --process --language es --share all
 uv run manola record --duration 30 --source meeting --live-transcript
 uv run manola ui
@@ -374,7 +393,10 @@ audio/
 Meetings/General/General/Meetings/...
 ```
 
-New meetings use the simplified layout directly under `Meetings/` unless a project is set.
+New meetings use the simplified layout directly under `Meetings/` unless a
+project is set. Old-layout meetings are still discoverable (`manola list` walks
+the workspace recursively) and can be relocated to the simplified layout with
+`manola migrate` (preview) / `manola migrate --apply` (Batch 5 #45).
 
 ## Recommended Next Steps
 
