@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.2.0",
+    "pytest>=9.1.1",
 ]
 local-transcription = [
 ]
